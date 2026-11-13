@@ -6,6 +6,7 @@ machine. Fake secrets are assembled at runtime so no credential-shaped literal i
 
 from __future__ import annotations
 
+import dataclasses
 import http.client
 import json
 import threading
@@ -30,6 +31,7 @@ from steproute.core import (
 from steproute.core.catalog import Catalog, load_default_catalog
 from steproute.core.schema_gen import load_json_schema
 from steproute.core.service import (
+    NoActionAllowed,
     Service,
     ServiceConfig,
     ServiceConfigError,
@@ -668,11 +670,39 @@ capture_text = true
         {"policy": {"kind": "magic"}},
         {"auth": {"token_env": "not a valid name!"}},
         {"server": "x"},
+        {"catalog": {"providers": []}},
+        {"catalog": {"providers": "anthropic"}},
+        {"catalog": {"providers": ["anthropic", ""]}},
     ],
 )
 def test_config_rejects(data: dict[str, Any]) -> None:
     with pytest.raises(ServiceConfigError):
         load_service_config(data)
+
+
+def test_catalog_providers_restricts_models_and_routing(tmp_path: Path) -> None:
+    rules = tmp_path / "rules.toml"
+    rules.write_text('[models]\nprovider_order = ["anthropic"]\n')
+    cfg = load_service_config(
+        {"catalog": {"providers": ["anthropic", "anthropic"]}, "store": {"path": str(tmp_path)}}
+    )
+    assert cfg.catalog_providers == ("anthropic",)
+    cfg = dataclasses.replace(cfg, rules_config=rules)
+    service, _ = build_service(cfg, environ={})
+    assert {m["provider"] for m in service.models()} == {"anthropic"}
+    assert [m["id"] for m in service.models()][0] == "claude-haiku-5-5"
+    decision = service.decide(StepState("claude-code", "s", 0, "subagent", 1000))
+    assert decision.action.model.startswith("claude-")
+    # A sensitive state has no feasible (local) model left, and nothing is logged for it.
+    with pytest.raises(NoActionAllowed) as ei:
+        service.decide(StepState("claude-code", "s", 1, "subagent", 1000, sensitive=True))
+    assert ei.value.sensitive is True
+
+
+def test_catalog_providers_unknown_provider_refused(tmp_path: Path) -> None:
+    cfg = dataclasses.replace(config(tmp_path), catalog_providers=("nobody",))
+    with pytest.raises(ServiceConfigError, match="nobody"):
+        build_service(cfg, environ={})
 
 
 def test_config_error_does_not_echo_pasted_secret() -> None:

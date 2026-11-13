@@ -140,6 +140,7 @@ path = "traces"           # default: ~/.steproute/traces
 
 [catalog]
 path = "my-catalog.toml"  # default: the built-in catalog
+providers = ["anthropic"] # keep only these providers' models (default: all)
 
 [policy]
 kind = "rules"            # "rules" (default) or "fixed"
@@ -159,6 +160,11 @@ salt_env = "STEPROUTE_SALT"     # NAME of the environment variable holding the s
 ```
 
 * `effort` defaults to `medium` in an action table.
+* `catalog.providers` restricts routing to the models of the listed providers, in catalog
+  order, for a harness that can run only those (the Claude Code plugin's config uses
+  `["anthropic"]`, `docs/CLAUDE-CODE.md`). A provider no model has is refused at startup. The
+  rules file's `provider_order` must then name only listed providers. With no local model left,
+  a sensitive state has no allowed action and gets a 503.
 * `token_env` and `salt_env` hold variable **names**, never the secret. A value that is not a
   valid variable name is refused (and not echoed). If the named variable is unset or empty the
   service refuses to start.

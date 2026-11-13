@@ -109,6 +109,8 @@ class ServiceConfig:
     token_env: str | None = None
     store_path: Path | None = None
     catalog_path: Path | None = None
+    #: Keep only catalog models from these providers (``None``: all of them).
+    catalog_providers: tuple[str, ...] | None = None
     policy_kind: str = "rules"
     rules_config: Path | None = None
     policy_action: ActionSpec | None = None
@@ -159,7 +161,10 @@ _SCHEMA: dict[str, dict[str, tuple[str, str]]] = {
     },
     "auth": {"token_env": ("token_env", "str")},
     "store": {"path": ("store_path", "path")},
-    "catalog": {"path": ("catalog_path", "path")},
+    "catalog": {
+        "path": ("catalog_path", "path"),
+        "providers": ("catalog_providers", "strlist"),
+    },
     "policy": {
         "kind": ("policy_kind", "str"),
         "rules_config": ("rules_config", "path"),
@@ -191,6 +196,12 @@ def _coerce(where: str, value: Any, kind: str, base: Path) -> Any:
         ok = isinstance(value, bool)
     elif kind == "str":
         ok = isinstance(value, str) and bool(value)
+    elif kind == "strlist":
+        ok = (
+            isinstance(value, list) and bool(value) and all(isinstance(v, str) and v for v in value)
+        )
+        if ok:
+            return tuple(dict.fromkeys(value))
     elif kind == "path":
         ok = isinstance(value, str) and bool(value)
         if ok:
@@ -501,6 +512,8 @@ def build_service(
             )
         except (ValueError, OSError) as exc:
             raise ServiceConfigError(f"catalog: {exc}") from None
+    if config.catalog_providers is not None:
+        catalog = _restrict_providers(catalog, config.catalog_providers)
 
     token: bytes | None = None
     if config.token_env:
@@ -576,6 +589,17 @@ def build_service(
         max_abandoned=config.max_abandoned,
     )
     return service, token
+
+
+def _restrict_providers(catalog: Catalog, providers: tuple[str, ...]) -> Catalog:
+    """The catalog with only the models of ``providers``, in file order."""
+    known = {m.provider for m in catalog.models}
+    unknown = [p for p in providers if p not in known]
+    if unknown:
+        raise ServiceConfigError(
+            f"catalog.providers: no model has provider {unknown}; known: {sorted(known)}"
+        )
+    return Catalog(tuple(m for m in catalog.models if m.provider in providers))
 
 
 def _is_loopback(host: str) -> bool:
