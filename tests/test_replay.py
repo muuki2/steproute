@@ -118,6 +118,18 @@ def test_smoke_grid_three_tasks_two_configurations(
     assert not led.open_intents()
 
 
+def test_local_only_run_leaves_an_empty_ledger(tmp_path: Path, mock: Any) -> None:
+    # Found on the first real local run (issue 56): no ledger file at all, so the run's
+    # directory could not show that nothing was spent.
+    mock.set_responder(ScriptedAgent())
+    plan, manifest = build(tmp_path, [LOCAL], tasks=["add-a"])
+    out = tmp_path / "out"
+    assert runner(plan, manifest, config_for(mock), out, environ={}).run(execute=True) == 0
+    assert (out / "ledger.jsonl").read_text() == ""
+    assert Ledger(out / "ledger.jsonl").by_month() == {}
+    assert _grid(out)[("add-a", *LOCAL)].success is True
+
+
 def test_dry_run_is_the_default_and_touches_nothing(tmp_path: Path, mock: Any) -> None:
     mock.set_responder(ScriptedAgent())
     plan, manifest = build(tmp_path, [LOCAL, HAIKU])
@@ -288,6 +300,35 @@ def test_provider_errors_are_retried_with_a_bound_and_never_labelled(
     assert a.meta["attempts"] == 3  # 1 + max_retries
     assert sum(1 for k, s in agent.seen if k == "a") == 3 * 3  # each attempt: 1 + call_retries
     assert grid[("add-b", *LOCAL)].success is True
+
+
+def test_a_call_retried_after_an_upstream_error_is_not_labelled_a_failure(
+    tmp_path: Path, mock: Any
+) -> None:
+    # Seen on the first real Ollama run (issue 56): one HTTP 500 from Ollama, retried by the
+    # runner, left that step's decision labelled success = false (the proxy's "retried"
+    # signal), a model failure in the training data for what was an infrastructure error.
+    failed_once: list[int] = []
+
+    def flaky(step: int, rec: Any) -> Reply | None:
+        if step == 1 and not failed_once:
+            failed_once.append(1)
+            return Reply(kind="error", status=500)
+        return None
+
+    mock.set_responder(ScriptedAgent(overrides={"a": flaky}))
+    plan, manifest = build(tmp_path, [LOCAL], tasks=["add-a"])
+    out = tmp_path / "out"
+    assert runner(plan, manifest, config_for(mock), out, environ={}).run(execute=True) == 0
+    assert _grid(out)[("add-a", *LOCAL)].success is True
+    pairs = list(TraceStore(out / "traces").joined())
+    assert len(pairs) == 4  # three steps that answered, one that got the 500
+    errored = [(d, o) for d, o in pairs if o is not None and o.final_model is None]
+    assert len(errored) == 1
+    _, o = errored[0]
+    assert o.success is None and o.signals["replay_call_failed"] is True
+    assert o.signals["replay_status"] == "passed" and "tests_passed" not in o.signals
+    assert all(o.success is True for _, o in pairs if o is not None and o.final_model)
 
 
 def test_keys_never_reach_any_output(tmp_path: Path, mock: Any) -> None:

@@ -467,6 +467,9 @@ class Runner:
     def _run_locked(self, text: str) -> int:
         self._check_plan_file()
         self.ledger = Ledger(self.out / "ledger.jsonl", clock=self.deps.clock)
+        # Always present after a real run: an empty ledger is the record that no paid call
+        # was made (a local-only run used to leave no ledger at all).
+        self.ledger.path.touch(exist_ok=True)
         self.journal = Journal.open(self.out / "runs.jsonl")
         self.guard = CapGuard(
             self.ledger,
@@ -898,6 +901,11 @@ class Runner:
                     signals.update(check.signals())
                 dids = [c.decision_id for c in client.calls if c.decision_id]
                 rp.label(dids, signals, success)
+                # A call that got an error answer produced no step: never a model outcome.
+                # ``retried = False`` overrides the proxy's retry signal, so it stays unlabelled.
+                failed = {**signals, "replay_call_failed": True, "retried": False}
+                failed.pop("tests_passed", None)
+                rp.label(client.failed_decisions, failed, None)
         finally:
             ws.close()
         calls = client.calls
