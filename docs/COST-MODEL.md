@@ -398,7 +398,7 @@ stay.latency_ms = 21200.0
 - **Effort output multipliers are placeholders (1.0).** Until they are measured, higher effort looks no more expensive in output.
 - **Output length is the caller's estimate.** Reasoning tokens are part of it.
 - **One cache owner.** `StepState` tracks only the last owner. A provider may still hold an older model's cache (Anthropic caches per model for 5 minutes), so switching back to it may be cheaper than this model says.
-- **Cache writes are assumed to cover the whole prompt**, meaning a breakpoint at the end of the prompt. This is the usual agent-harness setup, and the issue 12 proxy should place one there; it is not verified per harness. A harness that caches only a fixed prefix pays less than predicted for the write, and has less cached afterwards.
+- **Cache writes are assumed to cover the whole prompt**, meaning a breakpoint at the end of the prompt. This is the usual agent-harness setup, and the proxy places one there on Anthropic requests it rewrites (Anthropic's automatic breakpoint, `docs/PROXY.md` decision 10); it is not verified per harness. A harness that caches only a fixed prefix pays less than predicted for the write, and has less cached afterwards.
 - **Cache expiry is not modelled.** The collector must set `cached_prefix_tokens = 0` once the TTL (5 minutes on Anthropic, best effort on DeepSeek, `keep_alive` on Ollama) may have passed.
 - **Only the 5-minute Anthropic write is priced.** A collector that uses the 1-hour TTL must price with a profile whose `cache_write_mult` is 2.0 (`meta.cache_write_1h_mult`).
 - **DeepSeek is priced at peak rates.** Off-peak requests cost half, so `realized_cost` overstates them unless the collector passes an off-peak profile (prices in `meta`).

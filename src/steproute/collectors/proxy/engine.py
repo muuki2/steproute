@@ -74,6 +74,10 @@ class Attempt:
     error: UpstreamError | None = None
     check: CheckResult | None = None
     dropped: tuple[str, ...] = ()
+    #: Who placed Anthropic cache markers (``Prepared.cache``) and whether the provider keeps
+    #: the prompt cached after this call (``Prepared.cacheable``).
+    cache: str = "none"
+    cacheable: bool = True
     latency_ms: float = 0.0
 
     @property
@@ -410,6 +414,7 @@ class Proxy:
             prompt_tokens=int(a.usage.prompt_tokens),
             cache_min_tokens=profile.cache_min_tokens,
             cache_ttl_s=up.cache_ttl_s,
+            cacheable=a.cacheable,
         )
 
     def _fallback_attempt(
@@ -440,7 +445,7 @@ class Proxy:
             rewrite=a.rewrite,
             reasoning=self._reasoning(up, a.model, a.effort),
         )
-        a.dropped = prepared.dropped
+        a.dropped, a.cache, a.cacheable = prepared.dropped, prepared.cache, prepared.cacheable
         a.ran = True
         t0 = self._clock()
         try:
@@ -533,7 +538,7 @@ class Proxy:
                 rewrite=a.rewrite,
                 reasoning=self._reasoning(up, a.model, a.effort),
             )
-            a.dropped = prepared.dropped
+            a.dropped, a.cache, a.cacheable = prepared.dropped, prepared.cache, prepared.cacheable
             a.ran = True
             try:
                 opened = self.pool.stream(prepared)
@@ -554,6 +559,7 @@ class Proxy:
                     prepared = self.pool.prepare(
                         up, extra.model, step.params, rewrite=False, reasoning=None
                     )
+                    extra.cache, extra.cacheable = prepared.cache, prepared.cacheable
                     extra.ran = True
                     try:
                         opened = self.pool.stream(prepared)
@@ -645,6 +651,8 @@ class Proxy:
             signals["params_dropped"] = dropped
         if step.stream:
             signals["stream"] = True
+        if last is not None and last.cache != "none":
+            signals["cache_markers"] = last.cache
         # Label evidence comes from the final answer only, and never from the client's own
         # model standing in for a failed routed chain.
         if (

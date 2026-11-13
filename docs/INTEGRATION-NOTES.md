@@ -367,7 +367,7 @@ A returned dict replaces `data`. Returning None keeps the in-place mutation. A r
 
 - **Anthropic** (`llms/anthropic/chat/transformation.py:1644-1700, 2049-2057, 462-469`).
   - Models flagged `supports_adaptive_thinking` (all three Claude 5.5 entries are flagged) get `thinking={"type":"adaptive"}` plus `output_config={"effort": …}`.
-  - The mapping is `none` → thinking off, `minimal` → low, then low, medium, high, xhigh, max.
+  - The mapping is `minimal` → low, then low, medium, high, xhigh, max. `none` sends **no** thinking parameter at all (lines 1644-1651, 2044-2046), so the model's default applies: adaptive thinking on Opus 5.5 and Fable 5.2, which cannot turn it off. *(Corrected by issue 46; the spike said `none` → thinking off. Found by issue 12, section 8, and re-probed against the Anthropic-format mock.)*
 - **DeepSeek** (`llms/deepseek/chat/transformation.py:23-85`).
   - `none` sends `thinking={"type":"disabled"}`. Any other value sends `thinking={"type":"enabled"}` and also forwards `reasoning_effort`.
   - `budget_tokens` is dropped with a warning.
@@ -691,7 +691,7 @@ Sources (checked 2026-11-13):
 | `devstral:24b` | 14 GB | 128K | Q4_K_M, 23.6B | tools | none |
 
 - The thinking docs say `false` means "Models that cannot disable thinking use their lowest supported level instead".
-- The OpenAI-compatibility page says GPT-OSS maps `"none"` to `"low"`, and `xhigh` / `ultra` to `"high"`.
+- How `/v1` maps `reasoning_effort` for GPT-OSS: the code (`openai/openai.go:587-618`) first aliases `minimal` to `low` and `xhigh` / `ultra` to `max`, and sends `none` as `think = false`; GPT-OSS gets no model metadata on this path (`server/model_thinking.go:97-103`, Harmony is excluded), so those values go on to the GPT-OSS handling. The compatibility page at the tag (`docs/api/openai-compatibility.mdx:253`) says the end result for GPT-OSS is `minimal` → `low`, `xhigh` / `ultra` → `high`, and `none` → no thinking output. *(Corrected by issue 46; the spike said `none` → `low` and that the aliasing to `high` happens directly. The catalog never sends `none`, `xhigh` or `ultra` to gpt-oss, so nothing depends on it.)*
 - The gpt-oss template puts `Reasoning: {{ .ThinkLevel }}` and `Current date: …` in the system header (https://ollama.com/library/gpt-oss:20b/blobs/fa6710a93d78).
 
 **KV reuse.**
@@ -865,7 +865,7 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 
 - **Reasoning effort is forwarded unchanged on the OpenAI-compatible path.** For `openai/<model>`, any model name not in OpenAI's own catalog gets `OpenAIUnknownModelConfig`, which adds `reasoning_effort` to the supported parameters. That covers every Ollama tag, `gpt-oss:20b` included. The value is passed through unvalidated: `none`, `low`, `medium`, `max` and even `true` arrived at the mock verbatim. `temperature` passes through too.
 - **`cached_tokens` surfaces on the same path.** `prompt_tokens_details.cached_tokens` comes through in both the non-streaming usage and the final streaming usage chunk (`stream_options.include_usage`).
-- **So Ollama should go through `provider = "openai"` and `base_url = http://127.0.0.1:11434/v1`.** But the catalog's `effort_map` for `qwen3.5:9b` holds the native-API values `"true"`/`"false"`, which Ollama's `/v1` rejects. The proxy translates them per upstream (`reasoning_values`).
+- **So Ollama should go through `provider = "openai"` and `base_url = http://127.0.0.1:11434/v1`.** At issue 12 the catalog's `effort_map` for `qwen3.5:9b` held the native-API values `"true"`/`"false"`, which are not valid on Ollama's `/v1`, and the proxy translated them per upstream (`reasoning_values`). Issue 46 put the `/v1` values in the catalog (section 9).
 - **The pinned LiteLLM makes network calls of its own unless switched off.** On import it fetches the model cost map from GitHub, with a background retry thread. On the first Anthropic call it fetches the beta-header config. `LITELLM_OFFLINE_MODE=true` stops both, and the Hugging Face tokenizer download. Telemetry exists only in the LiteLLM proxy server and is opt-in there.
 - **Claude parameter checks are client-side, and incomplete for Fable 5.2:**
   - All four Claude models: `temperature != 1`, `top_p` and `top_k` raise `UnsupportedParamsError` (status 400) before any request unless `drop_params` is set.
@@ -889,7 +889,7 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 *Ollama's side* (`openai/openai.go` at `d63b7026`):
 
 - `FromChatRequest` takes `reasoning.effort` or `reasoning_effort`.
-- `ThinkingFromReasoningEffort` maps `""` to no setting and `"none"` to `think=false`, and aliases `minimal` to `low` and `xhigh`/`ultra` to `max`. It rejects unrecognised values with an error. So the catalog's `"true"`/`"false"` must not be sent as they are.
+- `ThinkingFromReasoningEffort` maps `""` to no setting and `"none"` to `think=false`, and aliases `minimal` to `low` and `xhigh`/`ultra` to `max`. For a model without thinking metadata it rejects unrecognised values with an error. *(Issue 46: for a model with metadata, such as one on the `qwen3.5` renderer, an unrecognised value is not rejected but passed on as a name and resolved to the model's default, thinking on; section 9.)* Either way the native `"true"`/`"false"` must not be sent.
 - `ToUsage` sets `prompt_tokens_details.cached_tokens` from `PromptEvalCachedCount` when present. This confirms section 7c.
 
 *Network at import and first use:*
@@ -917,16 +917,16 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 
 - `load_litellm` forces `LITELLM_OFFLINE_MODE`, `LITELLM_LOCAL_MODEL_COST_MAP` and `LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS` before import. A test checks that no lookup happens.
 - The Anthropic upstream uses `drop_params = ["temperature", "top_p", "top_k"]` and `forced_tool_choice = "auto"`.
-- The Ollama upstream sets `reasoning_values = {"true" = "medium", "false" = "none"}`.
+- The Ollama upstream set `reasoning_values = {"true" = "medium", "false" = "none"}`. Issue 46 removed the need: the catalog now holds `none` / `medium`.
 - Refusals are recorded as the raw `refusal` signal.
 
 **Contradictions with earlier sections.**
 
 | Where | Says | Finding |
 |---|---|---|
-| Section 4, Anthropic effort mapping | `none` → thinking off | At 1.109.1, `none` sends **no** thinking parameter, so the model default applies (adaptive on Opus 5.5 and Fable 5.2, which cannot turn it off). |
-| Catalog `qwen3.5:9b` `effort_map` | `none = "false"`, `medium = "true"` | Those are native `think` values. Over `/v1` they are invalid and need translating to `none` / `medium`. |
-| Section 7c (from the compat docs) | GPT-OSS maps `xhigh`/`ultra` to `high` | The `/v1` code aliases them to `max` before model-specific validation. The catalog never sends them for gpt-oss, so this has no effect. |
+| Section 4, Anthropic effort mapping (corrected in place by issue 46) | `none` → thinking off | At 1.109.1, `none` sends **no** thinking parameter, so the model default applies (adaptive on Opus 5.5 and Fable 5.2, which cannot turn it off). |
+| Catalog `qwen3.5:9b` `effort_map` (fixed by issue 46) | `none = "false"`, `medium = "true"` | Those are native `think` values. Over `/v1` they are invalid and need translating to `none` / `medium`. |
+| Section 7c (from the compat docs; corrected in place by issue 46) | GPT-OSS maps `xhigh`/`ultra` to `high` | The `/v1` code aliases them to `max` before model-specific validation. The catalog never sends them for gpt-oss, so this has no effect. |
 | Brief for issue 12 | Haiku 5.5 rejects only non-default sampling values | LiteLLM refuses any `temperature != 1` and any `top_p`/`top_k` for Haiku 5.5 client-side (map flag). `drop_params` makes that moot. |
 
 **Confidence.**
@@ -934,3 +934,51 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 - **High** for the OpenAI-compatible path, `cached_tokens` and the network fetches: source plus probes against loopback.
 - **High** for the parameter checks as LiteLLM implements them.
 - **Not verified:** that Anthropic's API returns 400 for Fable 5.2 forced tool choice. That rests on the brief and on LiteLLM's own comment for Fable 5.1; no call was made.
+
+## 9. Issue 46: Anthropic cache control through LiteLLM, and Ollama `/v1` reasoning values
+
+*Added by issue 46, checked 2026-11-13.* As in section 8, line numbers are in the installed wheel of `litellm==1.109.1` (from `uv.lock`), whose `litellm/` tree matches tag `v1.109.1`. Ollama is the source tree at `v0.40.16` (`d63b7026…`). Each LiteLLM finding was also exercised by calling `litellm.completion` with `anthropic/<model>` against an Anthropic Messages-format mock on loopback (`src/steproute/collectors/mock_upstream.py`, `POST /v1/messages`) and reading the raw request it received. No provider was called and Ollama was not run.
+
+**Answer.**
+
+- **Block-level markers pass through.** An OpenAI-format request reaches Anthropic's Messages API with every `cache_control` it carries: on a system message (message level for string content, block level for parts), on a user or tool message, on a content block, and on a tool definition.
+- **Request-level automatic caching passes through.** `cache_control` is a supported OpenAI-side parameter for Anthropic and is copied to the top of the Messages request unchanged. This is the breakpoint the proxy uses for the moving end of the conversation.
+- **LiteLLM has its own injection, off by default.** `cache_control_injection_points` (a per-call LiteLLM-only argument) places markers at named positions. Separately, the global `litellm.enable_anthropic_prompt_caching`, which the environment variable `LITELLM_ENABLE_ANTHROPIC_PROMPT_CACHING=true` switches on at import, synthesises two default breakpoints (the system prompt and the last message) unless the request already carries a marker. The proxy forwards neither argument from clients and forces the global flag off, so markers reach Anthropic only when the proxy (or the client) wrote them.
+- **Usage maps as section 4 says**, confirmed against the mock: Anthropic's `input_tokens`, `cache_read_input_tokens` and `cache_creation_input_tokens` become `prompt_tokens` = their sum, `prompt_tokens_details.cached_tokens` = the read, and `cache_creation_input_tokens` (top level) and `prompt_tokens_details.cache_creation_tokens` = the write, in both the non-streaming response and the final stream chunk. `normalise_usage` gives back the three counts exactly.
+- **Ollama `/v1` reasoning values for `qwen3.5:9b` are `none` (thinking off) and `medium` (thinking on)**, now in the catalog. The native `true`/`false` are wrong on `/v1`: with the model's thinking metadata an unknown name silently resolves to the model's default (thinking on, so `false` turned thinking on), and without metadata it is a 400.
+
+**Evidence: LiteLLM.**
+
+- `llms/anthropic/chat/transformation.py:831`: `"cache_control"` is in Anthropic's supported OpenAI parameters; `2077-2079`: "Pass through top-level cache_control for automatic prompt caching" (`optional_params["cache_control"] = value`).
+- `transformation.py:2160-2161` (string system content: the message-level `cache_control` is copied onto the text block) and `2180-2181` (list content: per block).
+- `transformation.py:1177-1190`: a tool's `cache_control`, at the top level of the tool or inside `function`, is copied to the Anthropic tool (except tool-search tools).
+- `litellm_core_utils/prompt_templates/factory.py:3119-3130` (user string content: message-level marker onto the text block), `1877-1885` (text parts), `1934` and `1962-1963` (tool results), `2239-2252` (`add_cache_control_to_content`).
+- `integrations/anthropic_cache_control_hook.py:70`: `MAX_CACHE_CONTROL_BLOCKS = 4`. `1241-1287` (`get_default_injection_points`): returns `[]` unless `litellm.enable_anthropic_prompt_caching` or the per-request `enable_prompt_caching` is true, or when the request already has a marker; otherwise one point on the system message and one on message `-1`. `1338-1391` (`maybe_seed_default_injection_points`), called from `main.py:756` (`acompletion`) and `main.py:5831` (`completion`) on every call. `__init__.py:325`: `enable_anthropic_prompt_caching` is read from `LITELLM_ENABLE_ANTHROPIC_PROMPT_CACHING` at import. `utils.py:5976`: `cache_control_injection_points` is a LiteLLM-only parameter.
+- Probe, `anthropic/claude-haiku-5-5` with a system message carrying a message-level marker, a tool call and its result, `cache_control={"type": "ephemeral"}` and `reasoning_effort="low"`: the request went to `/v1/messages` with `"system": [{"type": "text", "text": …, "cache_control": {"type": "ephemeral"}}]`, top-level `"cache_control": {"type": "ephemeral"}`, unmarked messages and tools, `"thinking": {"type": "adaptive", "display": "summarized"}`, `"output_config": {"effort": "low"}` and `"max_tokens": 128000`. The mock's usage `{input 50, cache_creation 1000, cache_read 2000}` came back as `prompt_tokens=3050, cached_tokens=2000, cache_creation_tokens=1000`.
+- Probe, `anthropic/claude-sonnet-5-5` with `reasoning_effort="none"`: no `thinking` and no `output_config` in the request (confirms the section 4 correction).
+
+**Evidence: Ollama** (`ollama/ollama` at `v0.40.16`).
+
+- `openai/openai.go:587-618` (`ThinkingFromReasoningEffort`): `"none"` → `think = false`. Otherwise the value is aliased (`minimal` → `low`, `xhigh`/`ultra` → `max`) and checked by `api.ValidateLegacyThinking` (`api/types.go:1254-1264`: `low`, `medium`, `high`, `max`). With valid thinking metadata that supports `true` and has no named levels, a valid value becomes `think = true`; an invalid one is passed on unchanged as a name. Without metadata an invalid value is an error (`openai.go:614-616`), which the middleware returns as 400 (`middleware/openai.go:465-469`).
+- `model/renderers/renderer.go:73-75` and `model/renderers/qwen35.go:363-368`: the `qwen3.5` renderer's thinking values are `[false, true]`. `model/renderers/thinking.go:30-45` (`ResolveThinking`): an unsupported name resolves to the default, which `server/model_thinking.go:80-82` sets to `true`.
+- `types/model/thinking.go:100-115`: a named level such as `"medium"` counts as thinking on (`Bool()` is `true` for any string), so `medium` turns thinking on also when the model has no metadata.
+- `docs/api/openai-compatibility.mdx:253`: "Boolean-only models that support enabling thinking map recognized compatibility efforts to `true`, while `"none"` requests `false`."
+
+**Consequences, implemented in issue 46** (`docs/PROXY.md`, decision 10):
+
+- The proxy adds two breakpoints to Anthropic requests it rewrites: the static prefix (last system block, or last tool) and the request-level automatic breakpoint. Configurable per upstream (`cache_breakpoints`), off in shadow mode by default, and never added when the client already placed markers.
+- The loader forces `litellm.enable_anthropic_prompt_caching = False`.
+- A request to Anthropic without any marker records nothing cached in the session state.
+- While breakpoints are on, `cache_ttl_s` may not exceed 300 (the 5-minute entry the proxy requests).
+- The catalog's `qwen3.5:9b` `effort_map` is `none = "none"`, `medium = "medium"`; the example config and the test harness no longer set `reasoning_values`.
+
+**Found on the way, not changed.**
+
+- Without a client `max_tokens`, LiteLLM fills in the model's maximum (`transformation.py:581-583`, 128000 for the Claude 5.5 models) even on a non-streaming request. Anthropic's SDKs refuse such non-streaming requests client-side; whether the API itself does was not checked. Clients of the proxy should send `max_tokens`, or stream.
+- LiteLLM adds `thinking.display = "summarized"` to adaptive thinking on its own. It changes what the response shows, not the cache key between steps (it is the same on every step).
+
+**Confidence.**
+
+- **High** for what LiteLLM sends and how usage maps back: source plus probes through the real `anthropic` provider.
+- **High** that the breakpoint placement follows Anthropic's documented rules (section 7a and the prompt-caching guide: tools → system → messages, automatic caching on the last cacheable block, 20-block lookback, 4 breakpoints). **Not verified** against the live API: that the automatic breakpoint finds the previous step's entry in practice, and the exact counts Anthropic reports.
+- **High** for the Ollama values from source and docs. **Not verified** by a run: Ollama is not installed here.

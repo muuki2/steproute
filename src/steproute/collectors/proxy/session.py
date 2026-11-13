@@ -381,18 +381,22 @@ class SessionTable:
         prompt_tokens: int,
         cache_min_tokens: int,
         cache_ttl_s: float,
+        cacheable: bool = True,
     ) -> None:
         """An attempt on ``(model, effort)`` got a response with ``prompt_tokens``.
 
         The provider now holds the whole prompt for that owner (none of it if the prompt is
-        below the provider's minimum), whether or not the response passed its check. The
-        chars-per-token ratio is recalibrated from the real count.
+        below the provider's minimum, or if the request asked for no caching: an Anthropic
+        request without a breakpoint, ``cacheable = False``), whether or not the response
+        passed its check. The chars-per-token ratio is recalibrated from the real count.
         """
         with self.locked(session_id) as s:
             s.owner_model = model
             s.owner_effort = effort
             s.last_prompt_tokens = prompt_tokens
-            s.cached_tokens = prompt_tokens if prompt_tokens >= cache_min_tokens else 0
+            s.cached_tokens = (
+                prompt_tokens if cacheable and prompt_tokens >= cache_min_tokens else 0
+            )
             s.cache_units = prompt.units
             s.cache_chars = prompt.chars
             s.cache_ts = self._clock()

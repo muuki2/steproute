@@ -113,6 +113,8 @@ class Harness:
     store: TraceStore
     port: int
     service: Service | None
+    #: Anthropic Messages-format mock; serves the models passed as ``anthropic_models``.
+    anthropic: MockUpstream | None = None
 
     def post(
         self,
@@ -172,14 +174,22 @@ class Harness:
 
 
 def upstreams(
-    cloud: MockUpstream, local: MockUpstream, **cloud_extra: Any
+    cloud: MockUpstream,
+    local: MockUpstream,
+    anthropic: MockUpstream | None = None,
+    anthropic_models: tuple[str, ...] = (),
+    anthropic_extra: dict[str, Any] | None = None,
+    **cloud_extra: Any,
 ) -> tuple[UpstreamConfig, ...]:
-    return (
+    """The cloud models on an OpenAI-format mock, except ``anthropic_models``, which go to an
+    Anthropic-format mock through LiteLLM's ``anthropic`` provider. The local upstream has no
+    ``reasoning_values``: the catalog's values go out as they are."""
+    out = [
         UpstreamConfig(
             name="cloud",
             provider="openai",
             base_url=cloud.base_url,
-            models=CLOUD_MODELS,
+            models=tuple(m for m in CLOUD_MODELS if m not in anthropic_models),
             local=False,
             drop_params=("temperature", "top_p", "top_k"),
             **cloud_extra,
@@ -190,9 +200,21 @@ def upstreams(
             base_url=local.base_url,
             models=LOCAL_MODELS,
             local=True,
-            reasoning_values={"true": "medium", "false": "none"},
         ),
-    )
+    ]
+    if anthropic is not None and anthropic_models:
+        out.append(
+            UpstreamConfig(
+                name="anthropic",
+                provider="anthropic",
+                base_url=anthropic.anthropic_base_url,
+                models=anthropic_models,
+                drop_params=("temperature", "top_p", "top_k"),
+                forced_tool_choice="auto",
+                **(anthropic_extra or {}),
+            )
+        )
+    return tuple(out)
 
 
 @dataclass
@@ -211,6 +233,8 @@ def start(
     local_fallback: str | None = "qwen3-coder:30b",
     catalog: Catalog | None = None,
     cloud_extra: dict[str, Any] | None = None,
+    anthropic_models: tuple[str, ...] = (),
+    anthropic_extra: dict[str, Any] | None = None,
     **config_extra: Any,
 ) -> Iterator[Harness]:
     """Generator fixture body: yields a running harness, then shuts everything down."""
@@ -229,10 +253,12 @@ def start(
             budget_ms=2000,
         )
         source = InProcessSource(service)
-    with MockUpstream() as cloud, MockUpstream() as local:
+    with MockUpstream() as cloud, MockUpstream() as local, MockUpstream() as anthropic:
         config = ProxyConfig(
             mode=mode,
-            upstreams=upstreams(cloud, local, **(cloud_extra or {})),
+            upstreams=upstreams(
+                cloud, local, anthropic, anthropic_models, anthropic_extra, **(cloud_extra or {})
+            ),
             checks=checks or CheckConfig(),
             local_fallback=local_fallback,
             **config_extra,
@@ -246,7 +272,7 @@ def start(
         )
         thread.start()
         try:
-            yield Harness(proxy, cloud, local, store, server.server_address[1], service)
+            yield Harness(proxy, cloud, local, store, server.server_address[1], service, anthropic)
         finally:
             server.shutdown()
             server.server_close()

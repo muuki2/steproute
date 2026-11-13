@@ -695,7 +695,6 @@ def test_ollama_smoke_produces_joined_traces(tmp_path: Path) -> None:
         base_url="http://127.0.0.1:11434/v1",
         models=(model,),
         local=True,
-        reasoning_values={"true": "medium", "false": "none"},
     )
     proxy = Proxy(
         ProxyConfig(upstreams=(up,)),
