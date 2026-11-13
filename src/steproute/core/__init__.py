@@ -39,6 +39,7 @@ from steproute.core.privacy import (
     mark_sensitive,
     redact_state,
 )
+from steproute.core.rules import RuleConfig, RuleConfigError, RulePolicy, load_rule_config
 from steproute.core.schema import (
     EFFORTS,
     SCHEMA_VERSION,
@@ -106,6 +107,10 @@ __all__ = [
     "UnknownFieldWarning",
     "effort_rank",
     "new_decision_id",
+    "RuleConfig",
+    "RuleConfigError",
+    "RulePolicy",
+    "load_rule_config",
     "Label",
     "LabelConfig",
     "apply_label",

@@ -58,6 +58,9 @@ pipeline() {
   uv build --quiet --out-dir "$dist"
   (cd "$dist" && uv run --isolated --no-project --python "$first" \
     --with ./steproute-*.whl steproute --version)
+  (cd "$dist" && uv run --isolated --no-project --python "$first" \
+    --with ./steproute-*.whl python -c \
+    "from steproute.core import load_rule_config, RuleConfig; assert load_rule_config() == RuleConfig()")
   rm -rf "$dist"
 }
 
