@@ -15,3 +15,6 @@ dist/
 node_modules/
 # trained models (docs/MODEL-CARD-TABULAR.md): never checked in
 /models/
+# API keys for the replay runner live in environment files; they must never be committed
+.env
+.env.*
