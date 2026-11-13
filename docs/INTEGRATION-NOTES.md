@@ -982,3 +982,44 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 - **High** for what LiteLLM sends and how usage maps back: source plus probes through the real `anthropic` provider.
 - **High** that the breakpoint placement follows Anthropic's documented rules (section 7a and the prompt-caching guide: tools → system → messages, automatic caching on the last cacheable block, 20-block lookback, 4 breakpoints). **Not verified** against the live API: that the automatic breakpoint finds the previous step's entry in practice, and the exact counts Anthropic reports.
 - **High** for the Ollama values from source and docs. **Not verified** by a run: Ollama is not installed here.
+
+## 10. Issue 17: SWE-bench harness, arm64 images, public per-instance results
+
+*Added by issue 17, checked 2026-11-13.* These findings come from the harness source on GitHub (`SWE-bench/SWE-bench` main at `02e7a74f`, PyPI `swebench` 5.0.2 of 2026-08-18), the Hugging Face dataset API, Docker Hub and GHCR listings, and the `SWE-bench/experiments` repository at `40f164d5`. Nothing was pulled, built or run, and no Docker daemon was started. The task-set rationale is in `docs/TASKSET.md`.
+
+**Answer.**
+
+- **The harness takes the image from the dataset row.** `make_test_spec` sets `image=instance["image"]`, and `--dataset_name` accepts a local `.json` file. A one-row dataset with `image` rewritten therefore makes the harness use a native arm64 image without any harness flag. `SwebenchBackend` does this.
+- **Verified rows are self-contained since 2026-08-16.** HF `SWE-bench/SWE-bench_Verified` revision `78f471bf` carries `image` (always `swebench/sweb.eval.x86_64.*`), `eval_script`, `log_parser` and `eval_type`. Harness 5.0 no longer needs a Dockerfile checkout to evaluate.
+- **arm64 images exist for 420 of 500 Verified tasks.**
+  - 281 are official, `swebench/sweb.eval.arm64.<owner>_1776_<repo>-<n>`, pushed 2025-04-20 (about 1.2 GB compressed for the one sampled).
+  - 420 are Epoch AI's, `ghcr.io/epoch-research/swe-bench.eval.arm64.<instance_id>:latest`. Epoch's README says: "provided on a best-effort basis, and have not been tested".
+  - The official set is a subset of Epoch's. Neither has xarray. The harness README calls arm64 support "experimental".
+- **Report layout differs by version.** Per-instance `report.json` is under `logs/run_evaluation/<run_id>/<model>/<id>/` in 5.0.x, and under `logs/evaluation/...` on unreleased main. The backend reads both.
+- **No report means no grade.** On a patch that does not apply, or a test timeout, the harness writes no `report.json`. It only logs `>>>>> Patch Apply Failed` or `Test timed out after N seconds.` to `run_instance.log`. Reports carry `infra_failure` since 5.0.
+- **The harness skips empty patches**, counting them as unresolved.
+- **Public per-instance results are free to read.** `evaluation/verified/<submission>/per_instance_details.json` gives `{id: {resolved, api_calls, cost}}` for recent submissions. Older ones have `results/results.json` lists. Public trajectories with per-call usage, cache reads and writes included, are at `https://swe-bench-submissions.s3.amazonaws.com/bash-only/<submission>/trajs/<id>/<id>.traj.json`, about 0.5 MB each. The experiments repository has no licence file.
+- **mini-SWE-agent's SWE-bench config** has `step_limit: 250`, `cost_limit: 3.` and a 60 s timeout per command, with Docker environments. The config does not say how Anthropic cache breakpoints are set. Public Claude trajectories nevertheless show 84-97% of input read from the cache.
+
+**Evidence.**
+
+- `swebench/harness/utils.py` `make_test_spec` (image from the row) and `load_swebench_dataset` (`.json` / `.jsonl` / `.parquet` paths).
+- `swebench/harness/run_evaluation.py`: `GIT_APPLY_CMDS` (`git apply --verbose`, `--3way`, `--reject`, then `patch --batch --forward --fuzz=5 -p1 -i`), the `EvaluationError` on patch failure and timeout, and `report.json` written only after grading.
+- `swebench/harness/constants/__init__.py`: `APPLY_PATCH_FAIL = ">>>>> Patch Apply Failed"`, `LOG_REPORT`, `LOG_INSTANCE`, `RUN_EVALUATION_LOG_DIR = Path("logs/evaluation")` on main; the CHANGELOG lists that rename as unreleased.
+- `swebench/image_builder/image_spec.py`: `arch` is `amd64` or `arm64` (`linux/arm64/v8`).
+- Docker Hub `hub.docker.com/v2/repositories/swebench/?name=sweb.eval.arm64.<prefix>`. Anonymous paging stops after 100, so the listing was split by prefix: 281 in all.
+- GHCR: an anonymous token, then `HEAD /v2/epoch-research/swe-bench.eval.arm64.<id>/manifests/latest` for each of the 500 ids: 420 returned 200. The check is reproduced by `scripts/select_taskset.py`.
+- `config/benchmarks/swebench.yaml` in `SWE-agent/mini-swe-agent` main.
+
+**Consequences for issue 18.**
+
+- The agent also runs inside the task container (mini-SWE-agent's Docker environment). Docker is therefore needed for the agent loop, not only for the check, and the arm64 image choice applies to both.
+- Verify that Anthropic cache breakpoints reach the provider through the proxy before the pilot. Without them the estimate triples (`steproute tasks estimate --no-cache`). LiteLLM's `cache_control_injection_points` is a fallback (`docs/PROXY.md`, Limitations).
+- Configuration-major, cheapest-first order touches every task image in every month. Either keep about 150 GB of images or pull per batch.
+- Validate each image with the gold patch, which must pass, and the empty patch, which must fail, before any paid run on it: `steproute tasks check <id> --patch gold|empty`.
+
+**Confidence.**
+
+- **High** for the harness behaviour: source read at a named commit.
+- **High** for the image counts: listed directly.
+- **Low** for whether the April 2025 official arm64 images and Epoch's untested builds grade like the x86_64 images with the August 2026 `eval_script`. Nothing was run.
