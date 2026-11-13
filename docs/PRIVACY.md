@@ -37,10 +37,26 @@ the rules that fired. It never returns matched text. Three sources:
 
 `mark_sensitive(state, paths, config)` returns a copy of the state with `sensitive=True` when
 detection fires. Detection and the callback can only set the flag, never clear it.
-`TraceStore.log_decision` also runs the text rules on `task_text` before dropping it, so a
-secret in a prompt flags the step even when the prompt is not kept. It cannot see file paths
-by itself; collectors that know them call `mark_sensitive` first. This version only sets the
-flag; routing that honours it is a separate issue.
+
+**Detection runs before routing.** Every policy (`ScoredPolicy`, `FixedPolicy`, and the rule
+baseline and later policies) calls `mark_before_routing(state, config)` on the incoming state
+before the hard filter and scoring, and logs the marked copy in `Decision.state`. A sensitive
+state only gets local models (`docs/ACTIONS.md`), so a secret in `task_text` keeps the step on
+the machine even when the collector did not set the flag. That matters most for collectors in
+other languages, which reach the policy through the HTTP service and cannot run detection
+themselves. The policy's `PrivacyConfig` (argument `privacy`, default `PrivacyConfig()`) sets
+the patterns, globs and callback.
+
+**File paths.** A step's paths travel in `StepState.features["paths"]`
+(`steproute.core.FEATURE_PATHS`), a list of strings. `mark_before_routing` and `redact_state`
+pass them to detection; a value of any other type is ignored, not raised on. `--scrub` exports
+drop every list value in `features`, so the paths never reach a published dataset.
+
+**The store's check remains as a second line.** `TraceStore.log_decision` still runs
+`redact_state`, which applies the same text and path rules before dropping the text. A
+decision made by a policy is already marked, so this changes nothing with the same config. It
+still catches records that did not come from a policy, and states routed with a laxer config
+than the store's.
 
 Default glob rules: `dotenv_files`, `dotenv_variants`, `dotenv_suffix`, `pem_files`,
 `key_files`, `keystore_p12`, `keystore_pfx`, `ssh_dir`, `ssh_key_rsa`, `ssh_key_ed25519`, `ssh_key_ecdsa`, `ssh_key_dsa`, `aws_dir`,

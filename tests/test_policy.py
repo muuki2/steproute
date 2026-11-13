@@ -625,3 +625,88 @@ def test_scrubbed_compact_decision_still_rebuilds() -> None:
     scrubbed = scrub_decision(d, ScrubOptions(salt="test-salt"))
     assert scrubbed.candidate_set == d.candidate_set
     assert rebuild_candidates(scrubbed, DEFAULT) == rebuild_candidates(d, DEFAULT)
+
+
+# --- sensitive detection before routing -------------------------------------------------------
+
+
+def _fake_secret() -> str:
+    # Built from pieces at runtime so no credential-shaped literal is in the source.
+    return "".join(["g", "h", "p", "_"]) + "Zq7" * 12
+
+
+def _secret_state(**kw: Any) -> StepState:
+    text = "please fix the deploy script, the token is " + _fake_secret() + " thanks"
+    return StepState("proxy", "s", 0, "main", 2_000, task_text=text, **kw)
+
+
+LOCAL = {m.id for m in DEFAULT.models if m.local}
+
+
+def _local_only(a: Action) -> bool:
+    return {x.model for x in a.chain()} <= LOCAL
+
+
+def test_decide_marks_secret_state_and_round_trips() -> None:
+    pol = ScoredPolicy(Constant(0.4), DEFAULT, 0.9, 0.5, seed=21)
+    # Same feasibility-cache shape, not sensitive: fills the cache with cloud candidates first.
+    clean = pol.decide(StepState("proxy", "s", 0, "main", 2_000, task_text="fix the script"))
+    assert not clean.state.sensitive
+    assert not all(_local_only(a) for a, _ in pol.action_probabilities(clean.state))
+    raw = _secret_state()
+    assert not raw.sensitive
+    for _ in range(50):  # both branches run at epsilon 0.5
+        d = pol.decide(raw)
+        assert d.state.sensitive and not raw.sensitive  # a marked copy; the input is untouched
+        assert _local_only(d.action)
+        rebuilt = rebuild_candidates(d, DEFAULT)
+        assert all(_local_only(a) for a in rebuilt)
+        probs = dict(pol.action_probabilities(d.state))
+        assert probs[d.action] == d.propensity
+        assert tuple(probs) == rebuilt
+        # the unmarked input and the logged state give the same answers everywhere
+        assert pol.action_probabilities(raw) == pol.action_probabilities(d.state)
+        assert pol.score(raw) == pol.score(d.state)
+        assert pol.greedy(raw) == pol.greedy(d.state)
+    assert pol.stats().explored > 0
+
+
+def test_paths_feature_drives_detection() -> None:
+    pol = ScoredPolicy(Constant(0.4), DEFAULT, 0.9, 0.0, seed=1)
+    s = StepState("proxy", "s", 0, "main", 2_000, features={"paths": ["app/config/.env"]})
+    d = pol.decide(s)
+    assert d.state.sensitive and _local_only(d.action)
+    for bad in ("app/config/.env", ["app/config/.env", 3], {"p": 1}):  # wrong types: ignored
+        s = StepState("proxy", "s", 0, "main", 2_000, features={"paths": bad})
+        assert not pol.decide(s).state.sensitive
+
+
+def test_privacy_config_is_used_and_flag_never_cleared() -> None:
+    from steproute.core.privacy import PrivacyConfig
+
+    def decide(privacy: PrivacyConfig, s: StepState) -> Decision:
+        return ScoredPolicy(Constant(), DEFAULT, 0.9, 0.0, seed=1, privacy=privacy).decide(s)
+
+    lax = PrivacyConfig(secret_patterns=(), sensitive_globs=())
+    assert not decide(lax, _secret_state()).state.sensitive
+    strict = PrivacyConfig(callback=lambda text, paths: "deploy" in (text or ""))
+    s = StepState("proxy", "s", 0, "main", 2_000, task_text="deploy now")
+    assert decide(strict, s).state.sensitive
+    already = StepState("proxy", "s", 0, "main", 2_000, sensitive=True)
+    assert decide(lax, already).state.sensitive
+
+
+def test_fixed_policy_marks_before_the_filter() -> None:
+    cloud = FixedPolicy(Action("claude-haiku-5-5", "low"), DEFAULT)
+    with pytest.raises(NoFeasibleAction):
+        cloud.decide(_secret_state())
+    local = FixedPolicy(Action("qwen3.5:9b", "medium"), DEFAULT)
+    d = local.decide(_secret_state())
+    assert d.state.sensitive and d.propensity == 1.0
+
+
+def test_store_second_line_uses_paths_too() -> None:
+    from steproute.core.privacy import PrivacyConfig, redact_state
+
+    s = StepState("proxy", "s", 0, "main", 10, features={"paths": ["home/u/.ssh/id_ed25519"]})
+    assert redact_state(s, PrivacyConfig()).sensitive

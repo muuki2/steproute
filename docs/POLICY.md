@@ -28,8 +28,9 @@ The policy never writes to the trace store. It returns a `Decision`; the caller 
 
 ## Decision rule
 
-`ScoredPolicy(predictor, catalog, tau, epsilon, *, spec=CandidateSpec(), seed=None, est_output_tokens=1000.0, inline_candidates_max=16, max_pending=10_000, pending_ttl_s=3600.0, clock=time.time, new_id=new_decision_id, name="scored")`
+`ScoredPolicy(predictor, catalog, tau, epsilon, *, spec=CandidateSpec(), seed=None, est_output_tokens=1000.0, inline_candidates_max=16, max_pending=10_000, pending_ttl_s=3600.0, clock=time.time, new_id=new_decision_id, name="scored", privacy=None)`
 
+0. **Sensitive detection.** Before anything else the state goes through `mark_before_routing(state, privacy)` (`core/privacy.py`; `privacy` defaults to `PrivacyConfig()`, so patterns, globs and the callback are configured in one place). It runs `mark_sensitive` over `task_text` and the paths in `features["paths"]` (a list of strings; any other value is ignored). Detection can only set `sensitive`, never clear it, and a state that is already sensitive is passed through unchanged. Everything below, the feasibility-cache key included, sees the marked state, and `Decision.state` is the marked copy; the caller's object is not modified. A secret in the prompt therefore keeps the step local even when the collector did not set the flag, which matters for collectors that reach the policy through the HTTP service and cannot run detection themselves. `score`, `greedy` and `action_probabilities` apply the same step, so calling them on the raw state or on the logged (already marked) state gives the same answer, and that answer matches the logged propensity (`test_decide_marks_secret_state_and_round_trips`). The rule baseline (issue 8) and later policies must call the same helper.
 1. **Candidates.** `spec.enumerate(catalog)` (that is `enumerate_actions(catalog, max_depth, include_holdout=...)`) once at construction; per decision, `filter_feasible(state, candidates, catalog, allow, deny, include_holdout)`. `NoFeasibleAction` propagates to the caller (the HTTP service in issue 11 handles fail-open). Every branch, exploration included, chooses only from this filtered set, so a sensitive state never gets a cloud model in any step.
 2. **Score.** For each feasible action: expected cost `c` (USD, the cache-aware cost model of `docs/COST-MODEL.md`) and overall success `p`.
 3. **Greedy choice.** Among actions with `p >= tau`, the lowest `c`. If none reaches `tau`, the highest `p`.
@@ -122,7 +123,10 @@ Calling `expected_cost` once per candidate on the default catalog at depth 2 (55
 |---|---|---|
 | `ScoredPolicy.decide`, Python 3.12 | 0.60 ms | 0.66 ms |
 | `ScoredPolicy.decide`, Python 3.13 | 0.57 ms | 0.64 ms |
+| `ScoredPolicy.decide` with a 20,000-character `task_text` and 5 paths, Python 3.12 | 2.26 ms | 2.41 ms |
 | naive `filter_feasible` + `expected_cost` per candidate, Python 3.12 | 8.6 ms | 9.3 ms |
+
+The rows without text have no `task_text`, so detection costs almost nothing. With text, sensitive detection costs about 1.7 ms per decision for 20,000 characters, three times the scoring cost, and it grows linearly with text length. That is material but inside the budget (p95 2.4 ms), and detection is never skipped to save time. The benchmark text is ordinary code and prose that matches no rule, so every regex scans the whole text, which is the worst case. The time is spread evenly over the eight token rules (about 0.18 ms each; the `(?<![A-Za-z0-9])` prefix stops the regex engine from scanning ahead for a literal) plus about 0.4 ms for `secret_assignment`. Making those patterns cheaper belongs to the privacy module, not this issue.
 
 No unit test asserts on timing.
 
@@ -138,7 +142,7 @@ The fingerprint is `v1:` plus the first 32 hex characters of SHA-256 over a cano
 
 **Rejected.** Hashing the whole catalog including prices and `meta`: a price correction would make every earlier decision unverifiable although its candidate set is unchanged. (Re-scoring an old decision needs the old prices anyway, and those live in the catalog's git history.) Storing candidate indices or a bitmask: not readable without the catalog either, and still hundreds of bytes. Always omitting the list: small sets are cheap and self-describing, so they stay explicit.
 
-Caveat: the rebuild uses the *logged* state. `TraceStore.log_decision` runs `redact_state`, which can set `sensitive` when it detects sensitive text. If a collector calls `decide` before `mark_sensitive`, the logged state differs from the one the policy saw, and verification fails (by count) instead of returning a wrong list. Collectors should call `mark_sensitive` before `decide`, which is also what privacy needs.
+The rebuild uses the *logged* state as it is and does not run detection again. That state is the one the policy routed, already marked by step 0, so the store's own check in `TraceStore.log_decision` (`redact_state`) cannot flip the flag afterwards with the default configuration. If the store is given a stricter `PrivacyConfig` than the policy, it can still set the flag on the logged copy; verification then fails by count instead of returning a wrong list. Use the same `PrivacyConfig` for both.
 
 ### 3. `est_output_tokens`: an injectable estimate with a placeholder default
 
@@ -177,7 +181,7 @@ Memory bound: a compact pending decision takes about 0.7 KB of its own (measured
 
 ## FixedPolicy
 
-`FixedPolicy(action, catalog, *, allow=None, deny=None, include_holdout=False, clock, new_id, name="fixed")` always returns `action` with propensity 1.0 and `candidates = [action]`, after `filter_feasible`: on a state that forbids the action (for example a cloud model on a sensitive state) `decide` raises `NoFeasibleAction`, and the caller must handle it. An action that names an unknown model or effort, or that the allow, deny or holdout settings always refuse, raises `ValueError` at construction. `report` does nothing. Used by the replay runner (issue 18) and as the service's fail-open default (issue 11): give that default a local model, or the fail-open path itself fails on sensitive states.
+`FixedPolicy(action, catalog, *, allow=None, deny=None, include_holdout=False, clock, new_id, name="fixed", privacy=None)` always returns `action` with propensity 1.0 and `candidates = [action]`, after the same sensitive detection as `ScoredPolicy` (step 0) and then `filter_feasible`: on a state that forbids the action (for example a cloud model on a sensitive state) `decide` raises `NoFeasibleAction`, and the caller must handle it. An action that names an unknown model or effort, or that the allow, deny or holdout settings always refuse, raises `ValueError` at construction. `report` does nothing. Used by the replay runner (issue 18) and as the service's fail-open default (issue 11): give that default a local model, or the fail-open path itself fails on sensitive states.
 
 ## Limitations
 
@@ -187,4 +191,5 @@ Memory bound: a compact pending decision takes about 0.7 KB of its own (measured
 - **One output estimate per decision**, the same for every model, adjusted only by the effort multiplier; the default is a placeholder.
 - **`report` memory is per process.** Pending decisions are lost on restart; outcomes reported afterwards are counted as unknown.
 - **Exploration is uniform** over the feasible set, which at depth 2 is mostly cascades with expensive top-tier fallbacks. Fine for coverage and for IPS, wasteful in money at high `epsilon`.
-- The state object is stored in the decision by reference; a caller that mutates it after `decide` changes the logged record.
+- `Decision.state` is a shallow copy made by detection, except when the input was already sensitive: then it is the caller's own object. Its `tools`, `features` and `failed_attempts` are shared with the caller either way, so a caller that mutates them after `decide` changes the logged record.
+- **Detection is best effort** (see `docs/PRIVACY.md`): routing is only as safe as the patterns, globs and callback in the `PrivacyConfig`.

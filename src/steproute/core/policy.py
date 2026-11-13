@@ -32,6 +32,7 @@ from steproute.core.cost import (
     price_usage,
     state_after_failure,
 )
+from steproute.core.privacy import PrivacyConfig, mark_before_routing
 from steproute.core.schema import (
     Action,
     CandidateSet,
@@ -100,7 +101,11 @@ class UpdatablePredictor(Predictor, Protocol):
 
 
 class Policy(Protocol):
-    """What every collector and the service call."""
+    """What every collector and the service call.
+
+    Implementations must route ``mark_before_routing(state, privacy)`` rather than the raw
+    state, before the hard filter, and log that marked state in ``Decision.state``.
+    """
 
     def decide(self, state: StepState) -> Decision: ...
 
@@ -220,6 +225,10 @@ def rebuild_candidates(
     checked against the fingerprint, the count and (when present) the explicit list. Raises
     ``CandidateSetMismatch`` if any check fails, for example because ``catalog`` is not the one
     the decision was made with or the logged state differs from the state the policy saw.
+
+    The logged state is used as it is, without running sensitive detection again: policies
+    log the state they routed, which is already marked (``mark_before_routing``), and
+    detection could only set a flag that is already set.
     """
     cs = decision.candidate_set
     if cs is None:
@@ -488,6 +497,7 @@ class ScoredPolicy:
         clock: Callable[[], float] = time.time,
         new_id: Callable[[], str] = new_decision_id,
         name: str = "scored",
+        privacy: PrivacyConfig | None = None,
     ) -> None:
         if not callable(getattr(predictor, "predict", None)):
             raise TypeError("predictor must have a predict(state, action_step) method")
@@ -513,6 +523,7 @@ class ScoredPolicy:
         self.max_pending = max_pending
         self.pending_ttl_s = float(pending_ttl_s)
         self.name = name
+        self.privacy = privacy or PrivacyConfig()
         self._clock = clock
         self._new_id = new_id
         self._scorer = _Scorer(self.catalog, self.spec)
@@ -542,18 +553,24 @@ class ScoredPolicy:
 
     # --- scoring ---
 
-    def _score(self, state: StepState) -> tuple[tuple[int, ...], list[float], list[float]]:
-        return self._scorer.score(state, _output_tokens(state, self._estimator), self._predict)
+    def _score(
+        self, state: StepState
+    ) -> tuple[StepState, tuple[int, ...], list[float], list[float]]:
+        # Sensitive detection runs first, so the hard filter, the feasibility cache key, the
+        # predictor and the logged Decision all see the marked state.
+        marked = mark_before_routing(state, self.privacy)
+        est = _output_tokens(marked, self._estimator)
+        return (marked, *self._scorer.score(marked, est, self._predict))
 
     def score(self, state: StepState) -> tuple[ScoredAction, ...]:
         """Every feasible action with its expected cost and success, in enumeration order."""
-        feasible, costs, succ = self._score(state)
+        _, feasible, costs, succ = self._score(state)
         acts = self._scorer.actions
         return tuple(ScoredAction(acts[i], costs[j], succ[j]) for j, i in enumerate(feasible))
 
     def greedy(self, state: StepState) -> ScoredAction:
         """The action ``decide`` takes when it does not explore."""
-        feasible, costs, succ = self._score(state)
+        _, feasible, costs, succ = self._score(state)
         g = _greedy(costs, succ, self.tau)
         return ScoredAction(self._scorer.actions[feasible[g]], costs[g], succ[g])
 
@@ -562,7 +579,7 @@ class ScoredPolicy:
 
         This is ``pi(a | state)`` for off-policy evaluation of this policy as a target.
         """
-        feasible, costs, succ = self._score(state)
+        _, feasible, costs, succ = self._score(state)
         g = _greedy(costs, succ, self.tau)
         n = len(feasible)
         acts = self._scorer.actions
@@ -575,8 +592,11 @@ class ScoredPolicy:
     # --- Policy protocol ---
 
     def decide(self, state: StepState) -> Decision:
-        """Choose an action for ``state``. Raises ``NoFeasibleAction`` if none is allowed."""
-        feasible, costs, succ = self._score(state)
+        """Choose an action for ``state``. Raises ``NoFeasibleAction`` if none is allowed.
+
+        ``Decision.state`` is ``state`` after sensitive detection (``mark_before_routing``).
+        """
+        marked, feasible, costs, succ = self._score(state)
         n = len(feasible)
         g = _greedy(costs, succ, self.tau)
         with self._lock:
@@ -589,7 +609,7 @@ class ScoredPolicy:
         decision = Decision(
             decision_id=self._new_id(),
             ts=self._clock(),
-            state=state,
+            state=marked,
             candidates=[acts[i] for i in feasible] if inline else [],
             action=acts[feasible[j]],
             policy=self.name,
@@ -667,7 +687,8 @@ class FixedPolicy:
 
     For the replay runner and the service's fail-open default. ``decide`` raises
     ``NoFeasibleAction`` when the state forbids the action (for example a cloud model on a
-    sensitive state); the caller must handle that. ``report`` does nothing.
+    sensitive state); the caller must handle that. Sensitive detection runs first, as in
+    ``ScoredPolicy``, and ``Decision.state`` is the marked state. ``report`` does nothing.
     """
 
     def __init__(
@@ -681,6 +702,7 @@ class FixedPolicy:
         clock: Callable[[], float] = time.time,
         new_id: Callable[[], str] = new_decision_id,
         name: str = "fixed",
+        privacy: PrivacyConfig | None = None,
     ) -> None:
         self.action = action
         self.catalog = _as_catalog(catalog)
@@ -688,6 +710,7 @@ class FixedPolicy:
         self.deny = _names(deny) or ()
         self.include_holdout = include_holdout
         self.name = name
+        self.privacy = privacy or PrivacyConfig()
         self._clock = clock
         self._new_id = new_id
         # Programming errors (unknown model or effort) surface at construction.
@@ -709,6 +732,7 @@ class FixedPolicy:
             ) from None
 
     def decide(self, state: StepState) -> Decision:
+        state = mark_before_routing(state, self.privacy)
         filter_feasible(
             state,
             (self.action,),

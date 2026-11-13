@@ -31,9 +31,11 @@ from steproute.core.policy import (
     rebuild_candidates,
 )
 from steproute.core.privacy import (
+    FEATURE_PATHS,
     PrivacyConfig,
     ScrubOptions,
     detect_sensitive,
+    mark_before_routing,
     mark_sensitive,
     redact_state,
 )
@@ -84,7 +86,9 @@ __all__ = [
     "rebuild_candidates",
     "PrivacyConfig",
     "ScrubOptions",
+    "FEATURE_PATHS",
     "detect_sensitive",
+    "mark_before_routing",
     "export_replay",
     "mark_sensitive",
     "redact_state",

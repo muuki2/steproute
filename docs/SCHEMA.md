@@ -94,7 +94,7 @@ Harness-neutral description of one routable step.
 | `sensitive` | boolean | `false` | Step must not leave the machine. |
 | `source` | string | `"personal"` | `replay` or `personal`; anything else raises `ValueError`. |
 | `task_text` | string or null | `null` | Optional, so traces can be shared without content. |
-| `features` | object | `{}` | Free-form extra features. |
+| `features` | object | `{}` | Free-form extra features. Documented keys: `paths` (list of strings, the file paths the step touches; read by sensitive detection, any other type ignored, dropped by `--scrub` exports like every list), `est_output_tokens` (number, overrides the policy's output-token estimate, `docs/POLICY.md`), and `task_text_len` / `task_text_hash` (written by the store when text is not captured, `docs/PRIVACY.md`). |
 
 ## Decision
 
