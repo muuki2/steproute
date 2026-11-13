@@ -3462,7 +3462,7 @@ requires-dist = [
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4" },
     { name = "lightgbm", marker = "extra == 'ml'", specifier = ">=4.0" },
     { name = "litellm", marker = "extra == 'proxy'", specifier = ">=1.40" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
