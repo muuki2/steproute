@@ -852,3 +852,85 @@ Two smaller points:
 | ISSUES issue 4 | DeepSeek "thinking on/off" | Four effort levels, plus time-of-day pricing (section 7b). |
 | DESIGN section 5, ISSUES issue 6 | Cache owned by model; switch billed at the cache-write rate | Ownership is per (model, effort) for Anthropic unless the per-message beta is used. The write premium exists only for Anthropic with `cache_control` (issue 6 notes). |
 | ISSUES issue 14 | Hooks capture "token usage including cache fields" | Hooks give final-request usage only. Use a mod's `turn.step` hook or OpenTelemetry (section 2). |
+
+---
+
+## 8. Issue 12: LiteLLM's OpenAI-compatible path, parameter handling and network behaviour
+
+*Added by issue 12, checked 2026-11-13.* Unlike sections 1 to 7, these findings come from the installed wheel of `litellm==1.109.1` (from `uv.lock`, hash-checked). Its `litellm/` tree matches tag `v1.109.1`. Line numbers are in that installed package.
+
+Each finding was also exercised against the loopback mock (`src/steproute/collectors/mock_upstream.py`), or through LiteLLM's request transformation called directly. No provider was called.
+
+**Answer.**
+
+- **Reasoning effort is forwarded unchanged on the OpenAI-compatible path.** For `openai/<model>`, any model name not in OpenAI's own catalog gets `OpenAIUnknownModelConfig`, which adds `reasoning_effort` to the supported parameters. That covers every Ollama tag, `gpt-oss:20b` included. The value is passed through unvalidated: `none`, `low`, `medium`, `max` and even `true` arrived at the mock verbatim. `temperature` passes through too.
+- **`cached_tokens` surfaces on the same path.** `prompt_tokens_details.cached_tokens` comes through in both the non-streaming usage and the final streaming usage chunk (`stream_options.include_usage`).
+- **So Ollama should go through `provider = "openai"` and `base_url = http://127.0.0.1:11434/v1`.** But the catalog's `effort_map` for `qwen3.5:9b` holds the native-API values `"true"`/`"false"`, which Ollama's `/v1` rejects. The proxy translates them per upstream (`reasoning_values`).
+- **The pinned LiteLLM makes network calls of its own unless switched off.** On import it fetches the model cost map from GitHub, with a background retry thread. On the first Anthropic call it fetches the beta-header config. `LITELLM_OFFLINE_MODE=true` stops both, and the Hugging Face tokenizer download. Telemetry exists only in the LiteLLM proxy server and is opt-in there.
+- **Claude parameter checks are client-side, and incomplete for Fable 5.2:**
+  - All four Claude models: `temperature != 1`, `top_p` and `top_k` raise `UnsupportedParamsError` (status 400) before any request unless `drop_params` is set.
+  - Sonnet 5.5 and Opus 5.5: forced `tool_choice` raises the same error.
+  - Fable 5.2 is missing from the model map, so its forced `tool_choice` (`any`/`tool`) is **forwarded** and would get Anthropic's 400.
+  - An Anthropic refusal becomes `finish_reason = "content_filter"`.
+
+**Evidence.**
+
+*OpenAI-compatible path:*
+
+- `utils.py:9876-9877`: `ProviderConfigManager.get_provider_chat_config` returns `OpenAIUnknownModelConfig()` when `not OpenAIGPTConfig.is_openai_catalog_model(model)`.
+- `llms/openai/chat/gpt_transformation.py:997-1002`: `OpenAIUnknownModelConfig` adds `reasoning_effort` to the supported parameters.
+- `llms/openai/openai.py:229-232`: the same choice on the handler side.
+- The o-series check needs `o<digit>` and catalog membership (`llms/openai/chat/o_series_transformation.py:125-132`), so `gpt-oss` does not match it.
+- `litellm_core_utils/llm_response_utils/convert_dict_to_response.py:883`: `litellm.Usage(**response_object["usage"])`.
+- `types/utils.py:2063-2073`: keeps the provider's `prompt_tokens_details` as given.
+- Probe result for `openai/qwen3-coder:30b`: `Usage(prompt_tokens=100, prompt_tokens_details=…cached_tokens=40)`.
+- Streaming probe: the final chunk was `{"choices": [], "usage": {"prompt_tokens": 100, …, "prompt_tokens_details": {"cached_tokens": 40}}}`.
+
+*Ollama's side* (`openai/openai.go` at `d63b7026`):
+
+- `FromChatRequest` takes `reasoning.effort` or `reasoning_effort`.
+- `ThinkingFromReasoningEffort` maps `""` to no setting and `"none"` to `think=false`, and aliases `minimal` to `low` and `xhigh`/`ultra` to `max`. It rejects unrecognised values with an error. So the catalog's `"true"`/`"false"` must not be sent as they are.
+- `ToUsage` sets `prompt_tokens_details.cached_tokens` from `PromptEvalCachedCount` when present. This confirms section 7c.
+
+*Network at import and first use:*
+
+- `__init__.py:411-413` (`model_cost_map_url`, a raw GitHub URL), `__init__.py:554` (`model_cost = get_model_cost_map(url=…)`, run at import) and `litellm_core_utils/get_model_cost_map.py:746`: the local backup is used only if `is_offline_mode()` or `LITELLM_LOCAL_MODEL_COST_MAP` is set. Otherwise it fetches, and on a transient failure starts the thread `litellm-model-cost-map-retry` (line 771).
+- `__init__.py:419-421` and `anthropic_beta_headers_manager.py:153`: the beta-header config is fetched lazily, unless offline or `LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS`.
+- `litellm_core_utils/offline_mode.py:4-7`: `LITELLM_OFFLINE_MODE=true` is the documented switch for fetches LiteLLM makes "on its own". It also gates the tokenizer download (`utils.py:2909`).
+- Confirmed by probe: with every non-loopback lookup refused, a plain `import litellm` attempted `raw.githubusercontent.com` once (and logged a retry). Loading the beta headers attempted it again. With the three variables set, neither did.
+- Telemetry settings use the `LITELLM_TELEMETRY_` prefix and live under `proxy/telemetry/` (`settings.py:12`), which the SDK path does not import.
+
+*Claude parameter handling:*
+
+- `llms/anthropic/common_utils.py:859-884` (`_supports_sampling_params`, flag `supports_sampling_params` with a name fallback that matches `fable`) and `887-907` (`_apply_sampling_param`: only `temperature == 1` passes without `drop_params`).
+- `common_utils.py:924-945`: `forced_tool_use_unsupported` is `supports_forced_tool_use is False`, so a model missing from the map (`claude-fable-5-2`) is not protected.
+- Map flags in `model_prices_and_context_window_backup.json`:
+  - `claude-haiku-5-5`: `supports_sampling_params: false`, `supports_forced_tool_use: true`.
+  - `claude-sonnet-5-5` and `claude-opus-5-5`: both `false`.
+  - `claude-fable-5-2`: absent.
+- Probe of `AnthropicConfig().map_openai_params`: Fable 5.2 with `tool_choice: "required"` gave `{"tool_choice": {"type": "any"}}`; Sonnet and Opus raised.
+- `llms/anthropic/chat/transformation.py:1644-1651`: `reasoning_effort = "none"` maps to no thinking parameter at all (lines 2044-2046 pop `thinking` and `output_config`). The model's default applies, which on Opus 5.5 and Fable 5.2 is adaptive thinking.
+- `_is_adaptive_thinking_model` (`common_utils.py:1098-1107`) uses fallback generalisation rules, so Fable 5.2 still gets `thinking: adaptive` plus `output_config.effort`. This was probed.
+- `litellm_core_utils/core_helpers.py:312`: `"refusal": "content_filter"`.
+
+**Consequences, implemented in issue 12** (`docs/PROXY.md`):
+
+- `load_litellm` forces `LITELLM_OFFLINE_MODE`, `LITELLM_LOCAL_MODEL_COST_MAP` and `LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS` before import. A test checks that no lookup happens.
+- The Anthropic upstream uses `drop_params = ["temperature", "top_p", "top_k"]` and `forced_tool_choice = "auto"`.
+- The Ollama upstream sets `reasoning_values = {"true" = "medium", "false" = "none"}`.
+- Refusals are recorded as the raw `refusal` signal.
+
+**Contradictions with earlier sections.**
+
+| Where | Says | Finding |
+|---|---|---|
+| Section 4, Anthropic effort mapping | `none` → thinking off | At 1.109.1, `none` sends **no** thinking parameter, so the model default applies (adaptive on Opus 5.5 and Fable 5.2, which cannot turn it off). |
+| Catalog `qwen3.5:9b` `effort_map` | `none = "false"`, `medium = "true"` | Those are native `think` values. Over `/v1` they are invalid and need translating to `none` / `medium`. |
+| Section 7c (from the compat docs) | GPT-OSS maps `xhigh`/`ultra` to `high` | The `/v1` code aliases them to `max` before model-specific validation. The catalog never sends them for gpt-oss, so this has no effect. |
+| Brief for issue 12 | Haiku 5.5 rejects only non-default sampling values | LiteLLM refuses any `temperature != 1` and any `top_p`/`top_k` for Haiku 5.5 client-side (map flag). `drop_params` makes that moot. |
+
+**Confidence.**
+
+- **High** for the OpenAI-compatible path, `cached_tokens` and the network fetches: source plus probes against loopback.
+- **High** for the parameter checks as LiteLLM implements them.
+- **Not verified:** that Anthropic's API returns 400 for Fable 5.2 forced tool choice. That rests on the brief and on LiteLLM's own comment for Fable 5.1; no call was made.

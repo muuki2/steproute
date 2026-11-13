@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_traces(sub)
     _add_catalog(sub)
     _add_serve(sub)
+    _add_proxy(sub)
     _add_mcp(sub)
     return parser
 
@@ -82,6 +83,49 @@ def _add_serve(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     serve.add_argument("--port", type=int, help="port; 0 picks a free one and prints it")
     serve.add_argument("--store", type=Path, help="trace store directory")
     serve.set_defaults(func=_serve)
+
+
+def _add_proxy(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``proxy`` command: the OpenAI-compatible routing proxy (needs the [proxy] extra)."""
+    proxy = sub.add_parser(
+        "proxy", help="Run the OpenAI-compatible routing proxy (needs steproute[proxy])."
+    )
+    proxy.add_argument("--config", type=Path, required=True, help="proxy config TOML")
+    proxy.add_argument("--host", help="bind address (default 127.0.0.1)")
+    proxy.add_argument("--port", type=int, help="port; 0 picks a free one and prints it")
+    proxy.add_argument("--mode", choices=("route", "shadow"), help="override [proxy] mode")
+    proxy.set_defaults(func=_proxy)
+
+
+def _proxy(args: argparse.Namespace) -> int:
+    import dataclasses
+    import logging
+
+    from steproute.collectors.proxy.config import ProxyConfigError, load_proxy_config
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    try:
+        config = load_proxy_config(args.config)
+        overrides = {
+            k: v
+            for k, v in (("host", args.host), ("port", args.port), ("mode", args.mode))
+            if v is not None
+        }
+        config = dataclasses.replace(config, **overrides)
+        from steproute.collectors.proxy.server import run_proxy
+
+        return run_proxy(config)
+    except ImportError:
+        print(
+            "steproute: the proxy needs the [proxy] extra: pip install 'steproute[proxy]'",
+            file=sys.stderr,
+        )
+        return 2
+    except (ProxyConfigError, OSError) as exc:
+        print(f"steproute: {exc}", file=sys.stderr)
+        return 2
 
 
 def _serve(args: argparse.Namespace) -> int:
