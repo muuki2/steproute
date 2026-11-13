@@ -5,6 +5,10 @@ outcome per agent step, sent to a local `steproute serve`. Shadow mode (log only
 default; route mode applies decisions between steps. Full documentation: `docs/DSH.md` in the
 steproute repository.
 
+Requires dsh 0.2.2-rc.3 exactly (on any other version dsh skips this bundle and starts without
+it) and therefore Node 24.9 or later, which dsh itself needs. Checked with Node v24.22.3 in
+`dsh headless` sessions, with the plugin inserted by a `--patch` overlay as below.
+
 ## Privacy
 
 **dsh's default setup uploads your session log to DeepSeek, and this plugin cannot stop that.**
@@ -41,4 +45,6 @@ with `steproute.yml`:
 ```
 
 `STEPROUTE_MODE=route` switches routing on for one run; `STEPROUTE_MODE=off` switches the
-plugin off.
+plugin off. dsh's logger shows nothing in a headless run, so add `STEPROUTE_STATUS=stderr` to
+see the plugin's mode when it loads and a summary (decisions, outcomes, applied, problems)
+when dsh exits.

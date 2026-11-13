@@ -52,7 +52,8 @@ from dsh are personal (decision D5) and `steproute traces export` never exports 
 
 You need:
 
-- dsh **0.2.2-rc.3** and Node **24.9 or later** (dsh's own requirement, its `engines` field).
+- dsh **0.2.2-rc.3** and Node **24.9 or later** (dsh's own requirement, its `engines` field;
+  dsh 0.2.2-rc.3 does not start on Node 22). Checked with Node v24.22.3.
 - [`uv`](https://docs.astral.sh/uv/) and `git` for steproute.
 
 ```bash
@@ -105,22 +106,27 @@ Settings, highest precedence first:
 
 1. Environment variables for one run: `STEPROUTE_MODE=shadow|route|off`,
    `STEPROUTE_URL=http://127.0.0.1:8789`, `STEPROUTE_TOKEN` (the bearer token, only if the
-   service uses `[auth]`; it is never read from a file).
+   service uses `[auth]`; it is never read from a file), `STEPROUTE_STATUS=stderr` (see
+   below).
 2. The plugin row's `config` in a patch layer (`plugins/dsh/cordis.patch.yml` shows every key):
    `mode`, `serviceUrl` (loopback only: `http://127.0.0.1:<port>` or `http://localhost:<port>`),
-   `decideTimeoutMs` (200), `reportTimeoutMs` (500), `routeSubagents` (true), `models` (the
-   mapping in [decision 2](#2-which-models-a-decision-may-name)), and `enabled: false` as an
-   off switch. A patch replaces a row's whole `config`, so restate the keys you keep.
+   `decideTimeoutMs` (200), `reportTimeoutMs` (500), `routeSubagents` (true),
+   `statusToStderr` (false), `models` (the mapping in
+   [decision 2](#2-which-models-a-decision-may-name)), and `enabled: false` as an off switch. A patch replaces a row's whole `config`, so restate the keys you keep.
 3. Defaults.
 
 A value that does not parse falls back to the safe default (an unknown mode means shadow, a
 non-loopback address means the default address) and is reported; nothing in the config can
 stop the plugin from loading. To remove it completely, `disabled: true` on the row.
 
-**Which mode is active.** The plugin logs `steproute 0.1.0: <mode> mode, service <url>` through
-dsh's logger when it loads, and when dsh shuts it down a summary line: decisions, outcomes,
-how many were applied, the median time a step waited, and the last problem (for example
-`service unreachable`). `dsh --profile <name> --dump-config` shows the row and its config.
+**Which mode is active.** The plugin writes `steproute 0.1.0: <mode> mode, service <url>`
+when it loads, and when dsh shuts it down a summary line: decisions, outcomes, how many were
+applied and restored, the median time a step waited, and the last problem (for example
+`steproute: route · 3 decisions · 1 outcomes · 1 applied · 1 restored · step wait median
+1.16 ms · service unreachable`). Both go to dsh's logger, which shows nothing in a headless
+run (it has no exporter there), so set `STEPROUTE_STATUS=stderr` (or `statusToStderr: true`)
+to get them on stderr. It is off by default because stderr belongs to the terminal UI in
+interactive profiles. `dsh --profile <name> --dump-config` shows the row and its config.
 Every outcome records `signals.routing_mode`.
 
 ## What it does
@@ -213,16 +219,24 @@ approvals, tests) is gone, and the proxy sees requests, not dsh steps.
 - **A cascade's fallback is never run** ([decision 4](#4-cascades)); the service's rules for dsh
   have cascades off.
 - **Outcomes in flight are lost when dsh exits while the service is down.** They are kept in
-  memory (at most 64) and resent after the next successful call, not written to disk.
+  memory (at most 64) and resent after the next successful call, not written to disk. Seen
+  through the CLI: a session whose service was killed lost the outcomes due after the kill.
+  With the service up, the last step's outcome (sent at turn end) did arrive before the
+  headless runner exited.
 - **Prompt size is an estimate**, built from the previous request's usage and the new text.
   The first step of a session does not know the system prompt's size.
 - **Only the shell tools (`bash`, `pwsh`) count as test runs**, only the common runners
   (`pytest`, `npm test`, `go test`, `cargo test`, ...), and only a foreground run that
   finished: a background job or a timed-out run gives no verdict. Compile errors are not
   detected.
-- **Validated against dsh 0.2.2-rc.3 only.** The mechanism was exercised on the real dsh
-  libraries in-process (below) but not through the `dsh` command line, which needs Node 24.9;
-  see `docs/INTEGRATION-NOTES.md` section 13 for what that leaves open.
+- **Validated against dsh 0.2.2-rc.3 only**, and through the CLI only in the headless profile
+  with the plugin inserted by a `--patch` overlay (five sessions on Node v24.22.3, inside a
+  sandbox that allowed loopback connections only). Loading it as a bundle with
+  `dsh plugin add`, and the TUI and web profiles, were not run
+  (`docs/INTEGRATION-NOTES.md` section 13).
+- **The first step's prompt size is badly underestimated**: in the CLI sessions the turn-start
+  state said 269 tokens (the user's text) for a request billed at 1650 (the system prompt
+  and tool definitions are unseen).
 
 ## Troubleshooting
 
@@ -261,7 +275,9 @@ Opt-in sessions on the real dsh, which need the pinned install (about 1 GB):
 (cd tests/dsh/pinned && npm ci --ignore-scripts)
 scripts/dsh_inprocess_session.sh route /tmp/dsh-check-1          # kills the service after request 2
 scripts/dsh_inprocess_session.sh shadow /tmp/dsh-check-2 none   # keeps it
-scripts/dsh_session.sh route /tmp/dsh-check-3                   # the dsh CLI; needs Node 24.9+
+# the dsh CLI (macOS): put a Node 24.9+ build's bin first on PATH for this command only
+PATH=/path/to/node-v24.x-darwin-arm64/bin:$PATH scripts/dsh_session.sh route /tmp/dsh-check-3
+PATH=/path/to/node-v24.x-darwin-arm64/bin:$PATH scripts/dsh_session.sh shadow /tmp/dsh-check-4 none
 ```
 
 - `scripts/dsh_inprocess_session.sh` composes the core of dsh-base from the real dsh
@@ -273,7 +289,15 @@ scripts/dsh_session.sh route /tmp/dsh-check-3                   # the dsh CLI; n
 - `scripts/dsh_session.sh` runs the real CLI, `dsh headless`, against the repository's mock
   upstream (`scripts/dsh_mock_upstream.py`) on loopback, with HOME, `DSH_HOME` and
   `DSH_AGENTS_HOME` in the scratch directory and a patch that turns off every outbound path
-  found in dsh 0.2.2-rc.3. It refuses to run on Node older than 24.9.
+  found in dsh 0.2.2-rc.3. dsh runs inside `/usr/bin/sandbox-exec` with
+  `scripts/dsh-loopback-only.sb`, which blocks every outbound connection except to loopback;
+  `scripts/dsh_sandbox_check.sh` proves that before each session (an external host by name
+  and by address must fail, the mock must answer), and the script does not start dsh if it
+  fails. The mock kills `steproute serve` with SIGKILL as model request N arrives (default 2;
+  `none` keeps it). Afterwards it prints dsh's own session log per step
+  (`scripts/dsh_session_log.mjs`), what the mock received, the sandbox's network denials from
+  the system log, and the store check. It refuses to run on Node older than 24.9 and says how
+  to put Node 24 on `PATH`.
 
 Results: `docs/INTEGRATION-NOTES.md` section 13.
 
@@ -305,8 +329,10 @@ it each call's `tools/post-execute` waterfall runs, in model order, just before 
 So the last call's post-execute sees every other result of the batch in the session log, and
 is still before the next step's read. The plugin asks `/decide` there, waits at most
 `decideTimeoutMs`, and calls `select()`; the next step's pre-step then reads that selection.
-In the in-process session the `model/selection` event lands between the batch's `tool/call`
-and `tool/result`, and the adapter is then called with the selected model and effort.
+In the in-process session and in the CLI sessions the `model/selection` event lands between
+the batch's `tool/call` and `tool/result`. Through the CLI, dsh's own session log then shows
+a new `request/header` with the selected model and effort, and the next requests reached the
+DeepSeek endpoint (the mock) as `deepseek-v4-pro` with `output_config.effort: low`.
 
 That the model which ran is the one selected is visible in the outcome: the selection the
 step was fixed with comes from `agent/pre-step`'s `modelSelection` (`agent.ts:303`,
@@ -431,8 +457,9 @@ calls per step, 64 unsent outcomes, 256 delay samples. Every handler catches; no
 into dsh; a waterfall listener returns `next()`'s result unchanged.
 
 Measured added delay per step in route mode (`signals.plugin_wait_ms`, the time a step waited
-in post-execute): 0.85 to 4.18 ms in the in-process session against a local service on an Apple
-M-series laptop, the same as the `/decide` round trip. The first step of a turn waits for
+in post-execute): 1.01 to 1.16 ms in the CLI sessions and 0.85 to 4.18 ms in the in-process
+sessions, against a local service on an Apple M-series laptop, the same as the `/decide`
+round trip. The first step of a turn waits for
 nothing, and in shadow mode no step waits (the decision is asked for and the step goes on).
 Details: `docs/INTEGRATION-NOTES.md` section 13.
 
@@ -461,8 +488,9 @@ config (a peer dependency for six fields).
 The plugin row's `config` in any patch layer, overridden for one run by `STEPROUTE_MODE`,
 `STEPROUTE_URL` and `STEPROUTE_TOKEN`; the token only from the environment. The service
 address must be loopback. Off is `mode: off`, `enabled: false`, or `disabled: true` on the
-row. The active mode is in dsh's log at load, in the summary line at shutdown, in
-`--dump-config`, and in every outcome. See [Modes and settings](#modes-and-settings).
+row. The active mode is in the load line and the shutdown summary (on stderr with
+`STEPROUTE_STATUS=stderr`, since dsh's logger is silent in headless), in `--dump-config`, and
+in every outcome. See [Modes and settings](#modes-and-settings).
 
 *Rejected:* a steproute config file under `$DSH_HOME` (another file to keep in sync with the
 patch layers dsh already has); a slash command or status surface (headless dsh has none, and
