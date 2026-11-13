@@ -54,6 +54,13 @@ A routing choice. Frozen and hashable.
 | `price_tiers` | array of PriceTier | `[]` | Prompt-size price tiers. `price_in` / `price_out` apply up to and including the first threshold. |
 | `effort_map` | object of string | `{}` | Shared effort level to the provider's native reasoning value. A supported effort absent from the map means "send no reasoning parameter". |
 | `effort_change_keeps_cache` | boolean | `false` | Whether changing effort between two requests keeps the provider's prompt cache. |
+| `cache_min_tokens` | integer | `0` | Shortest prompt the provider caches; below it nothing is read or written (512 on Anthropic). |
+| `latency_base_ms` | number or null | `null` | Fixed per-request latency estimate, in ms. Set together with the next two, or not at all. |
+| `latency_ms_per_input_token` | number or null | `null` | Prefill latency per prompt token not read from the cache, in ms. |
+| `latency_ms_per_output_token` | number or null | `null` | Decode latency per output token, in ms. |
+| `latency_switch_ms` | number or null | `null` | Extra latency when the step's model is not the session's current model (for example a local model reload), in ms. `null` means 0. |
+
+No profile in the default catalog carries a latency estimate; nothing has been measured. The cost model (`docs/COST-MODEL.md`) returns no latency for a profile without one.
 
 `ModelProfile.prices_for(prompt_tokens)` returns the `(price_in, price_out)` in force. The prompt length counts all input tokens, cache reads and writes included, and a request over a threshold pays the higher rate on the whole request. Exactly the threshold is still the lower tier.
 
@@ -81,6 +88,8 @@ Harness-neutral description of one routable step.
 | `task_id` | string or null | `null` | Task id, when the harness has one. |
 | `cached_prefix_tokens` | integer | `0` | Tokens of the prompt already in the session cache. |
 | `current_model` | string or null | `null` | Model that owns the session cache. |
+| `current_effort` | string or null | `null` | Effort the cache owner ran at; the cache owner is the pair (`current_model`, `current_effort`). `null` means unknown, which the cost model treats as "cache lost on this model" unless the model supports a single effort or has `effort_change_keeps_cache`. Must be in the effort vocabulary. |
+| `failed_attempts` | array of Action | `[]` | Single-step actions already tried and failed for this step, oldest first. Empty for a fresh step. Set in the state a cascade's later step runs in, so a predictor can condition on the failure. |
 | `tools` | array of string | `[]` | Tools in scope. |
 | `sensitive` | boolean | `false` | Step must not leave the machine. |
 | `source` | string | `"personal"` | `replay` or `personal`; anything else raises `ValueError`. |
@@ -111,12 +120,22 @@ Harness-neutral description of one routable step.
 | `signals` | object | `{}` | Raw signals (tests passed, tool error, retry, user rejection, judge score). |
 | `final_model` | string or null | `null` | Model that produced the final answer. |
 | `escalated` | boolean | `false` | Whether the cascade escalated. |
-| `input_tokens` | integer | `0` | Uncached input tokens. |
-| `output_tokens` | integer | `0` | Output tokens. |
-| `cache_read_tokens` | integer | `0` | Tokens read from the prompt cache. |
-| `cache_write_tokens` | integer | `0` | Tokens written to the prompt cache. |
-| `cost_usd` | number or null | `null` | Cost in USD; `null` means the provider reported none. |
+| `input_tokens` | integer | `0` | Prompt tokens neither read from the cache nor billed as cache writes (billed at `price_in`). |
+| `output_tokens` | integer | `0` | Output tokens, reasoning included. |
+| `cache_read_tokens` | integer | `0` | Prompt tokens read from the prompt cache. |
+| `cache_write_tokens` | integer | `0` | Prompt tokens billed as cache writes; `0` on providers without a write charge. |
+| `cost_usd` | number or null | `null` | Cost in USD; `null` means the provider reported none. For an escalated outcome, the sum of each attempt priced separately. |
 | `latency_ms` | number or null | `null` | Latency in milliseconds. |
+
+### Token fields
+
+One convention, whatever the provider; collectors normalise to it. `input_tokens`, `cache_read_tokens` and `cache_write_tokens` are disjoint, and their sum is the full prompt length (which selects a price tier).
+
+- Anthropic: `input_tokens` (already excludes cache tokens), `cache_read_input_tokens`, `cache_creation_input_tokens`, used as they are.
+- DeepSeek, LiteLLM and other OpenAI-compatible servers (Ollama `/v1` too), whose `prompt_tokens` includes cached tokens: `input_tokens = prompt_tokens - cached_tokens`, `cache_read_tokens = cached_tokens`, `cache_write_tokens = 0`.
+- dsh: `inputTokens` and `cacheReadTokens`, with `cache_write_tokens = 0`.
+
+For an escalated outcome the token fields are sums over attempts and serve statistics only. `steproute.core.realized_cost` refuses to price them; see `docs/COST-MODEL.md`.
 
 ## JSON Schema
 
@@ -143,6 +162,8 @@ A decision with a two-step cascade:
     "task_id": "task-9",
     "cached_prefix_tokens": 17000,
     "current_model": "claude-sonnet-4-5",
+    "current_effort": "medium",
+    "failed_attempts": [],
     "tools": ["Bash", "Edit"],
     "sensitive": false,
     "source": "personal",

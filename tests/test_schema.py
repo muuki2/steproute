@@ -76,6 +76,9 @@ profiles = st.builds(
     ).map(tuple),
     effort_map=st.dictionaries(text, text, max_size=3),
     effort_change_keeps_cache=st.booleans(),
+    cache_min_tokens=ints,
+    latency_base_ms=st.none() | finite,
+    latency_switch_ms=st.none() | finite,
 )
 states = st.builds(
     StepState,
@@ -87,6 +90,8 @@ states = st.builds(
     task_id=st.none() | text,
     cached_prefix_tokens=ints,
     current_model=st.none() | text,
+    current_effort=st.none() | st.sampled_from(EFFORTS),
+    failed_attempts=st.lists(actions, max_size=2),
     tools=st.lists(text, max_size=3),
     sensitive=st.booleans(),
     source=st.sampled_from(["replay", "personal"]),

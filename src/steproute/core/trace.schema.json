@@ -123,6 +123,49 @@
         },
         "effort_change_keeps_cache": {
           "type": "boolean"
+        },
+        "cache_min_tokens": {
+          "type": "integer"
+        },
+        "latency_base_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms_per_input_token": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms_per_output_token": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_switch_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -173,6 +216,31 @@
               "type": "null"
             }
           ]
+        },
+        "current_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "enum": [
+            null,
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "failed_attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
         },
         "tools": {
           "type": "array",
