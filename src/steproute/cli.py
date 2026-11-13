@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_traces(sub)
     _add_catalog(sub)
     _add_serve(sub)
+    _add_mcp(sub)
     return parser
 
 
@@ -104,6 +105,73 @@ def _serve(args: argparse.Namespace) -> int:
     except (ServiceConfigError, OSError) as exc:
         print(f"steproute: {exc}", file=sys.stderr)
         return 2
+
+
+def _add_mcp(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``mcp`` command: the stdio MCP server (needs the ``mcp`` extra)."""
+    mcp = sub.add_parser(
+        "mcp", help="Run the MCP server over stdio (route_task, report_outcome, list_models)."
+    )
+    mcp.add_argument("--config", type=Path, help="service config TOML, as for `serve`")
+    mcp.add_argument("--store", type=Path, help="trace store directory")
+    mcp.add_argument("--harness", default="mcp", help="harness name logged (default: mcp)")
+    mcp.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        metavar="MINUTES",
+        help="close decisions left unreported this long with success=None (default 30)",
+    )
+    for word, default in (("small", 2000), ("medium", 8000), ("large", 32000)):
+        mcp.add_argument(
+            f"--{word}-tokens",
+            type=int,
+            default=default,
+            metavar="N",
+            help=f"prompt tokens assumed for est_size={word!r} (placeholder; default {default})",
+        )
+    mcp.set_defaults(func=_mcp)
+
+
+def _mcp(args: argparse.Namespace) -> int:
+    import dataclasses
+    import importlib.util
+    import logging
+
+    if importlib.util.find_spec("mcp") is None:
+        print(
+            "steproute: the MCP server needs the 'mcp' extra: pip install 'steproute[mcp]'",
+            file=sys.stderr,
+        )
+        return 2
+    from steproute.collectors.mcp_server import Advisor, McpConfig, McpConfigError, run_stdio
+    from steproute.core.service import ServiceConfigError, build_service, load_service_config
+
+    # stdout carries the protocol; every log line goes to stderr.
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    try:
+        config = load_service_config(args.config)
+        if args.store is not None:
+            config = dataclasses.replace(config, store_path=args.store)
+        service, _token = build_service(config)
+        mcp_config = McpConfig(
+            harness=args.harness,
+            timeout_s=args.timeout * 60.0,
+            size_tokens={
+                "small": args.small_tokens,
+                "medium": args.medium_tokens,
+                "large": args.large_tokens,
+            },
+        )
+    except (ServiceConfigError, McpConfigError, OSError) as exc:
+        print(f"steproute: {exc}", file=sys.stderr)
+        return 2
+    run_stdio(Advisor(service, mcp_config))
+    return 0
 
 
 def _load(path: Path | None) -> Catalog | None:
