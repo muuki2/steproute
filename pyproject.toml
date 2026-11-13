@@ -44,5 +44,10 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-files = ["src/steproute/core", "src/steproute/collectors", "src/steproute/tasks"]
+files = [
+    "src/steproute/core",
+    "src/steproute/collectors",
+    "src/steproute/tasks",
+    "src/steproute/eval",
+]
 strict = true
