@@ -17,7 +17,11 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-proxy = ["litellm>=1.40"]
+# litellm is pinned exactly and installed from uv.lock with hashes. NEVER use 1.82.7 or
+# 1.82.8 (malicious credential-stealing .pth file) or 1.107.0 (wheels built from a lookalike
+# repository); see docs/INTEGRATION-NOTES.md section 4. Upgrade only after re-reading the
+# release and advisories, and re-run the checks in docs/PROXY.md.
+proxy = ["litellm==1.109.1"]
 mcp = ["mcp>=2.3,<3"]  # the server uses the 2.x MCPServer API
 ml = ["lightgbm>=4.0", "scikit-learn>=1.3"]
 graph = ["torch>=2.2", "torch-geometric>=2.5"]
@@ -40,5 +44,5 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-files = ["src/steproute/core"]
+files = ["src/steproute/core", "src/steproute/collectors"]
 strict = true
