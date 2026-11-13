@@ -202,6 +202,10 @@ class ProxyConfig:
     mode: str = "route"
     harness: str = "proxy"
     on_upstream_error: str = "client_model"
+    #: ``client_model`` fails open to the client's own model when no decision is available;
+    #: ``error`` refuses the request instead (HTTP 503), so nothing runs that the router did
+    #: not choose. The replay runner uses ``error``.
+    on_no_decision: str = "client_model"
     extra_params: tuple[str, ...] = ()
     session_header: str = "X-Steproute-Session"
     max_sessions: int = 1024
@@ -229,6 +233,7 @@ class ProxyConfig:
         for key, value, allowed in (
             ("proxy.mode", self.mode, MODES),
             ("proxy.on_upstream_error", self.on_upstream_error, ON_UPSTREAM_ERROR),
+            ("proxy.on_no_decision", self.on_no_decision, ON_UPSTREAM_ERROR),
             ("decisions.source", self.source, SOURCES),
             ("privacy.task_text", self.task_text, TASK_TEXT),
         ):
@@ -325,6 +330,7 @@ _SCALARS: dict[str, dict[str, tuple[str, str]]] = {
         "mode": ("mode", "str"),
         "harness": ("harness", "str"),
         "on_upstream_error": ("on_upstream_error", "str"),
+        "on_no_decision": ("on_no_decision", "str"),
         "extra_params": ("extra_params", "strs"),
     },
     "session": {

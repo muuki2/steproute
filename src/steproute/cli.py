@@ -16,6 +16,7 @@ from steproute.core.privacy import ScrubOptions
 from steproute.core.schema import ModelProfile
 from steproute.core.store import StoreStats, TraceStore, compute_stats
 from steproute.core.toolcheck import DEFAULT_BASE_URL, Transport, check_model, urllib_transport
+from steproute.replay.cli import add_replay
 from steproute.tasks.cli import add_tasks
 
 
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_mcp(sub)
     add_tasks(sub)
     _add_eval(sub)
+    add_replay(sub)
     return parser
 
 

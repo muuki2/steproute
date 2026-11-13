@@ -1,0 +1,34 @@
+# Three tiny local tasks for the replay runner's smoke grid (tests/test_replay.py). All three
+# are the tiny_add task of tests/fixtures/tasks; the scripted mock agent reads the TASK-KEY in
+# the prompt and writes the right fix for "a" and "b" and a wrong one for "c".
+
+[meta]
+name = "replay-smoke"
+backend = "local"
+
+[[task]]
+id = "add-a"
+stratum = "easy"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: a. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-b"
+stratum = "medium"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: b. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-c"
+stratum = "hard"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: c. add() in calc.py subtracts instead of adding; fix it."

@@ -364,6 +364,17 @@ class Proxy:
                 "shadow",
                 SHADOW_PREFIX + decision.decision_id,
             )
+        if self.config.on_no_decision == "error":
+            return Response(
+                503,
+                {},
+                _error_body(
+                    503,
+                    "steproute_no_decision",
+                    "no routing decision is available and [proxy] on_no_decision = 'error'; "
+                    "the request was not sent anywhere",
+                ),
+            )
         # No decision: fail open to the client's own model, subject to the privacy rule.
         if client_id is not None and (not sensitive or client_local):
             return [Attempt(client_id, client_effort, False)], "fail_open", None
@@ -649,6 +660,10 @@ class Proxy:
         dropped = sorted({d for a in called for d in a.dropped})
         if dropped:
             signals["params_dropped"] = dropped
+        if any(a.responded and a.usage is None for a in called):
+            # A response without usage: its cost is unknown, not zero (the service must not
+            # price the empty token counts as $0; ``docs/PROXY.md``, "What is logged").
+            signals["usage_missing"] = True
         if step.stream:
             signals["stream"] = True
         if last is not None and last.cache != "none":

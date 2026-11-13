@@ -444,7 +444,12 @@ class Service:
     def report(self, outcome: Outcome) -> Outcome:
         """Label and price ``outcome``, store it, tell the policy, return what was stored."""
         outcome = apply_label(outcome)
-        if outcome.cost_usd is None and not outcome.escalated and outcome.final_model:
+        if (
+            outcome.cost_usd is None
+            and not outcome.escalated
+            and outcome.final_model
+            and outcome.signals.get("usage_missing") is not True
+        ):
             if outcome.final_model in self.catalog:
                 try:
                     cost = realized_cost(outcome, self.catalog.get(outcome.final_model))

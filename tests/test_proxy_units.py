@@ -322,3 +322,17 @@ def test_cli_proxy_refuses_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFi
     bad.write_text("[nonsense]\n")
     assert main(["proxy", "--config", str(bad)]) == 2
     assert "unknown section" in capsys.readouterr().err
+
+
+def test_path_scan_is_linear_on_long_identifiers() -> None:
+    """Regression (found by issue 18): the path-token pattern backtracked exponentially on a
+    long word without a slash, so one ``COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`` hung the proxy."""
+    import time
+
+    word = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+    msgs = [{"role": "user", "content": f"run `echo {word} && cat patch.txt` " * 200}]
+    t0 = time.monotonic()
+    scan_units(msgs, 0, PrivacyConfig())
+    assert time.monotonic() - t0 < 1.0
+    found = scan_units([{"role": "user", "content": "look at ~/.ssh/id_rsa"}], 0, PrivacyConfig())
+    assert found  # still detects paths

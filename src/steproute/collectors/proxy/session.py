@@ -57,8 +57,11 @@ _PATH_KEYS = frozenset(
         "notebook_path",
     }
 )
-# Path-looking tokens in free text: something with a slash, or a dotfile name.
-_PATH_TOKEN = re.compile(r"(?:~|\.{0,2})?(?:/?[\w.@+-]+)*/[\w.@+-]+|(?<![\w/])\.[\w.-]+")
+# Path-looking tokens in free text: something with a slash, or a dotfile name. Each segment
+# after the first must follow a "/": the earlier form ``(?:/?[\w.@+-]+)*/...`` let a long
+# identifier split into segments in exponentially many ways (a 24-character word took
+# seconds, a 37-character one hung the proxy), and matched exactly the same tokens.
+_PATH_TOKEN = re.compile(r"(?:~|\.{0,2})?(?:/?[\w.@+-]+)?(?:/[\w.@+-]+)+|(?<![\w/])\.[\w.-]+")
 
 
 def _canon(value: Any) -> str:

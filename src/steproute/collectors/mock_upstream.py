@@ -22,6 +22,7 @@ import json
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -58,6 +59,10 @@ class Reply:
     chunk_delay: float = 0.0
     #: Number of content pieces a streamed text reply is split into.
     pieces: int = 3
+    #: ``False`` leaves ``usage`` out of the response (a provider that reports none).
+    usage: bool = True
+    #: ``"text"`` replies with a tool call too: the assistant text goes with the call.
+    tool_text: str | None = None
 
 
 @dataclass
@@ -69,12 +74,18 @@ class Received:
     body: dict[str, Any]
 
 
+#: Picks the reply from the request itself (for a scripted agent whose answer depends on the
+#: conversation so far). Returning ``None`` falls back to the script, then the default.
+Responder = Callable[[Received], "Reply | None"]
+
+
 @dataclass
 class _State:
     script: deque[Reply] = field(default_factory=deque)
     default: Reply = field(default_factory=Reply)
     received: list[Received] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    responder: Responder | None = None
 
 
 class _Server(ThreadingHTTPServer):
@@ -114,11 +125,14 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             body = {}
         st = self.server.state
+        rec = Received(self.path, {k.lower(): v for k, v in self.headers.items()}, body)
         with st.lock:
-            st.received.append(
-                Received(self.path, {k.lower(): v for k, v in self.headers.items()}, body)
-            )
-            reply = st.script.popleft() if st.script else st.default
+            st.received.append(rec)
+            responder = st.responder
+        reply = responder(rec) if responder is not None else None
+        if reply is None:
+            with st.lock:
+                reply = st.script.popleft() if st.script else st.default
         if self.path.rstrip("/").endswith("/v1/messages"):
             return self._anthropic(reply, body)
         if not self.path.rstrip("/").endswith("/chat/completions"):
@@ -132,17 +146,16 @@ class _Handler(BaseHTTPRequestHandler):
         if body.get("stream"):
             return self._stream(reply, model, body)
         message, finish = _message(reply)
-        self._json(
-            200,
-            {
-                "id": "chatcmpl-mock",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": model,
-                "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-                "usage": _usage(reply),
-            },
-        )
+        out: dict[str, Any] = {
+            "id": "chatcmpl-mock",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{"index": 0, "message": message, "finish_reason": finish}],
+        }
+        if reply.usage:
+            out["usage"] = _usage(reply)
+        self._json(200, out)
 
     def _stream(self, reply: Reply, model: str, body: dict[str, Any]) -> None:
         self.send_response(200)
@@ -199,7 +212,7 @@ class _Handler(BaseHTTPRequestHandler):
                 chunk({"content": text[i : i + step]})
         chunk({}, finish)
         options = body.get("stream_options") or {}
-        if isinstance(options, dict) and options.get("include_usage"):
+        if isinstance(options, dict) and options.get("include_usage") and reply.usage:
             send({**base, "choices": [], "usage": _usage(reply)})
         send("[DONE]")
 
@@ -328,10 +341,13 @@ def _anthropic_content(reply: Reply) -> tuple[list[dict[str, Any]], str]:
             args = json.loads(reply.tool_args)
         except ValueError:
             args = {}
-        return (
-            [{"type": "tool_use", "id": "toolu_mock_1", "name": reply.tool_name, "input": args}],
-            "tool_use",
+        blocks: list[dict[str, Any]] = []
+        if reply.tool_text:
+            blocks.append({"type": "text", "text": reply.tool_text})
+        blocks.append(
+            {"type": "tool_use", "id": "toolu_mock_1", "name": reply.tool_name, "input": args}
         )
+        return blocks, "tool_use"
     if reply.kind == "empty":
         return [], "end_turn"
     if reply.kind == "refusal":
@@ -356,7 +372,7 @@ def _message(reply: Reply) -> tuple[dict[str, Any], str]:
         return (
             {
                 "role": "assistant",
-                "content": None,
+                "content": reply.tool_text,
                 "tool_calls": [
                     {
                         "id": "call_mock_1",
@@ -422,6 +438,11 @@ class MockUpstream:
         """Queue replies for the next requests, in order."""
         with self._state.lock:
             self._state.script.extend(replies)
+
+    def set_responder(self, responder: Responder | None) -> None:
+        """Choose each reply from the request (``None`` switches back to the script)."""
+        with self._state.lock:
+            self._state.responder = responder
 
     def set_default(self, reply: Reply) -> None:
         with self._state.lock:

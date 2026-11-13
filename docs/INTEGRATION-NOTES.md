@@ -25,6 +25,7 @@ Rules for this file:
 | OpenSquilla | `TokenRhythm/opensquilla` v0.5.8 | `fdc3898a31432b48a1731bfe663a2b6f44223e88` | 2026-11-10 |
 | RouteLLM | `lm-sys/RouteLLM` HEAD; PyPI `routellm` 0.2.0 | `0b64fdafe049e596a3f5657c219329f24af24198` | 2024-08-10 |
 | Ollama (source read for cache behaviour) | `v0.40.16` | `d63b702609c4300a2ca07be2bdb0adb9834725e5` | 2026-11-07 |
+| mini-SWE-agent (source read; not a dependency) | `2.4.6` (PyPI wheel, sha256 `a35463c5…cd54`) | n/a (wheel) | 2026-07-23 |
 | Claude Code | docs only; version gates quoted per feature (mods need v2.1.287+) | n/a | docs read 2026-11-13 |
 
 ## Summary
@@ -1023,3 +1024,34 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 - **High** for the harness behaviour: source read at a named commit.
 - **High** for the image counts: listed directly.
 - **Low** for whether the April 2025 official arm64 images and Epoch's untested builds grade like the x86_64 images with the August 2026 `eval_script`. Nothing was run.
+
+## 11. Issue 18: mini-SWE-agent as the replay scaffold, and two proxy findings
+
+*Added by issue 18, checked 2026-11-13.* mini-SWE-agent was read from the PyPI wheel `mini_swe_agent-2.4.6-py3-none-any.whl` (uploaded 2026-07-23; sha256 `a35463c553ac825c7773b03cfa69cd44958e3af20155dcc5711fdf9e4c67cd54`), unpacked into a scratch directory and never installed or run. Line references are to files in that wheel. The two proxy findings were reproduced against the loopback mock with the pinned `litellm==1.109.1`. No provider was called.
+
+**Answer.**
+
+- **mini-SWE-agent fits the step shape but not the runner**, so the replay runner uses its own loop with the same shape (`docs/REPLAY.md`, decision 1). Licence MIT (PyPI metadata; copyright line names the two authors). Not added as a dependency.
+- **LiteLLM 1.109.1 invents zero usage.** For an OpenAI-compatible response without a `usage` object, `litellm.completion` returns `usage = {prompt_tokens: 0, completion_tokens: 0, total_tokens: 0}`. Before this issue the proxy priced that at $0. Fixed: `normalise_usage` treats a 0-token prompt as no usage, the outcome gets `cost_usd = null` and `signals.usage_missing = true`, and the service no longer fills in a $0 cost for it.
+- **The proxy's path scan backtracked exponentially.** `_PATH_TOKEN` in `collectors/proxy/session.py`, `(?:~|\.{0,2})?(?:/?[\w.@+-]+)*/[\w.@+-]+|...`, splits a long word without a slash in exponentially many ways: 22 characters took 0.6 s, 24 took 2.5 s, and the 37-character `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` in the scaffold's instructions hung the proxy indefinitely. Any real coding conversation has such identifiers. Fixed with an equivalent unambiguous pattern (every segment after the first follows a `/`), which matched exactly the same tokens on the test strings; regression test `test_path_scan_is_linear_on_long_identifiers`.
+
+**Evidence: mini-SWE-agent 2.4.6.**
+
+- *Endpoint.* `models/litellm_model.py`: `LitellmModel._query` calls `litellm.completion(model=..., messages=..., tools=[BASH_TOOL], **model_kwargs)`, so a custom OpenAI-compatible endpoint is `model_kwargs.api_base`. The module does `import litellm` at import time.
+- *Actions.* Structured tool calls by default: `models/utils/actions_toolcall.py` defines one `bash` tool and parses `tool_calls` (unknown tool, bad JSON or missing `command` is a `FormatError`). A text-parsing variant exists (`litellm_textbased_model.py`, a regex over fenced blocks).
+- *Commands.* `environments/local.py`: `subprocess.Popen(command, shell=True, cwd=..., env=os.environ | self.config.env)`, so a local run passes the **whole host environment**, API keys included, to the model's commands. `environments/docker.py`: `docker run -d` then `docker exec`, forwarding only `env` and `forward_env`.
+- *Submission and limits.* `LocalEnvironment._check_finished`: the first output line `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` with exit code 0 ends the run, the rest is the submission. `agents/default.py`: `step_limit`, `cost_limit` (checked before each query, "exceeding (!)"), `max_consecutive_format_errors = 3`. `config/benchmarks/swebench.yaml`: step limit 250, cost limit 3, command timeout 60 s, observations above 10,000 characters cut to 5,000 head and 5,000 tail.
+- *Cost tracking.* `LitellmModel._calculate_cost` uses `litellm.cost_calculator.completion_cost` and raises `RuntimeError` when the cost is not positive unless `cost_tracking = "ignore_errors"`, which then records 0. Behind our proxy every model name is unknown to LiteLLM's map, so its `cost_limit` would be inert.
+- *Retries.* `models/utils/retry.py`: tenacity, `stop_after_attempt(MSWEA_MODEL_RETRY_STOP_AFTER_ATTEMPT or 10)`, `wait_exponential(min=4, max=60)`, on every exception except authentication, not-found, permission, context-window, unsupported-parameter errors and `KeyboardInterrupt`.
+- *Cache markers.* `models/utils/cache_control.py`: with `set_cache_control: "default_end"` a marker goes on the last message only; the default is `None` (no markers). Unset, our proxy places its own breakpoints (`docs/PROXY.md`, decision 10); set, the proxy would leave the client's single marker alone.
+- *History.* `DefaultAgent.run` and `add_messages`: a linear message list that only grows; nothing is condensed.
+- *Dependencies* (wheel metadata): `pyyaml`, `requests`, `jinja2`, `pydantic>=2`, `litellm>=1.75.5` (excluding 1.82.7 and 1.82.8), `tenacity`, `rich`, `python-dotenv`, `typer`, `platformdirs`, `textual`, `prompt_toolkit`, `datasets`, `openai`.
+
+**Consequences, implemented in issue 18.** `steproute.replay.agent.BashAgent` keeps the step shape (linear history, one `bash` tool, 60 s commands, 10,000-character observations, the submission marker, 250 steps, three format errors); the runner owns cost, limits and retries; the workspace passes no host variables to commands; the proxy places the cache breakpoints. The proxy gained `[proxy] on_no_decision` (`client_model` or `error`), which the runner sets to `error`.
+
+**Confidence.**
+
+- **High** for what mini-SWE-agent 2.4.6 does: source read from the published wheel.
+- **High** for the two proxy findings: reproduced and covered by tests.
+- **Not verified:** how the shorter task message of our loop changes model behaviour; the pilot measures steps and cost directly.
+
