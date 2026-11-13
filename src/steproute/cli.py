@@ -31,7 +31,29 @@ def build_parser() -> argparse.ArgumentParser:
     _add_proxy(sub)
     _add_mcp(sub)
     add_tasks(sub)
+    _add_eval(sub)
     return parser
+
+
+def _add_eval(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``eval`` command: the offline evaluator (``steproute.eval``, imported on use)."""
+    p = sub.add_parser(
+        "eval",
+        help="Evaluate policies on a replay grid or logged traces; JSON report and plot.",
+        description="Evaluate policies against every single configuration. A grid gives "
+        "task-level, full-information results; logged traces give step-level off-policy "
+        "estimates. See docs/EVALUATION.md.",
+    )
+    from steproute.eval.args import add_arguments
+
+    add_arguments(p)
+    p.set_defaults(func=_eval)
+
+
+def _eval(args: argparse.Namespace) -> int:
+    from steproute.eval.cli import run
+
+    return run(args)
 
 
 def _add_traces(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
