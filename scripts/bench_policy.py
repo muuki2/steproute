@@ -23,6 +23,7 @@ from collections.abc import Callable
 from steproute.core import (
     Action,
     CandidateSpec,
+    RulePolicy,
     ScoredPolicy,
     StepState,
     expected_cost,
@@ -92,6 +93,15 @@ def main() -> None:
     p50, p95, worst = bench(lambda: policy.decide(with_text), args.n)
     print(
         f"ScoredPolicy.decide, {len(text)}-char text + {len(paths)} paths  "
+        f"p50 {p50:.3f} ms  p95 {p95:.3f} ms  max {worst:.3f} ms"
+    )
+
+    rules = RulePolicy(catalog)
+    p50, p95, worst = bench(lambda: rules.decide(state), args.n)
+    print(f"RulePolicy.decide, no text  p50 {p50:.3f} ms  p95 {p95:.3f} ms  max {worst:.3f} ms")
+    p50, p95, worst = bench(lambda: rules.decide(with_text), args.n)
+    print(
+        f"RulePolicy.decide, {len(text)}-char text + {len(paths)} paths  "
         f"p50 {p50:.3f} ms  p95 {p95:.3f} ms  max {worst:.3f} ms"
     )
 
