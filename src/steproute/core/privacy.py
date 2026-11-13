@@ -21,6 +21,7 @@ from steproute.core.schema import Action, Decision, Outcome, StepState
 __all__ = [
     "DEFAULT_SECRET_PATTERNS",
     "DEFAULT_SENSITIVE_GLOBS",
+    "FEATURE_PATHS",
     "FEATURE_TEXT_HASH",
     "FEATURE_TEXT_LEN",
     "REDACTED",
@@ -30,17 +31,22 @@ __all__ = [
     "ScrubOptions",
     "detect_sensitive",
     "keyed_hash",
+    "mark_before_routing",
     "mark_sensitive",
     "redact_secrets",
     "redact_state",
     "scrub_decision",
     "scrub_outcome",
+    "state_paths",
 ]
 
 #: ``StepState.features`` key holding ``len(task_text)`` when the text was not captured.
 FEATURE_TEXT_LEN = "task_text_len"
 #: ``StepState.features`` key holding the salted hash of the text (only if ``hash_text``).
 FEATURE_TEXT_HASH = "task_text_hash"
+#: ``StepState.features`` key: the file paths the step touches, a list of strings. Sensitive
+#: detection checks them against the sensitive globs. Any other type is ignored.
+FEATURE_PATHS = "paths"
 #: Replacement for any secret-pattern match in a scrubbed export.
 REDACTED = "[REDACTED]"
 
@@ -218,6 +224,31 @@ def mark_sensitive(
     return dataclasses.replace(state, sensitive=state.sensitive or det.sensitive)
 
 
+def state_paths(state: StepState) -> tuple[str, ...]:
+    """The paths in ``state.features["paths"]``, or ``()`` if absent or not a list of strings.
+
+    A wrongly typed value is ignored rather than raised on: this runs in the request path.
+    """
+    value = state.features.get(FEATURE_PATHS)
+    if isinstance(value, list | tuple) and all(isinstance(p, str) for p in value):
+        return tuple(value)
+    return ()
+
+
+def mark_before_routing(state: StepState, config: PrivacyConfig | None = None) -> StepState:
+    """The state a policy must route: ``state`` with sensitive detection applied.
+
+    Runs ``mark_sensitive`` over ``state.task_text`` and ``state_paths(state)``. Detection can
+    only set the flag. A state already marked sensitive is returned unchanged (detection
+    could not change it), so marking twice is a no-op and a logged decision's state can be
+    passed back in. Every policy calls this before the hard filter and scoring, and puts the
+    returned state in the ``Decision``.
+    """
+    if state.sensitive:
+        return state
+    return mark_sensitive(state, state_paths(state), config)
+
+
 # --- write path -----------------------------------------------------------------------------
 
 
@@ -234,7 +265,7 @@ def redact_state(state: StepState, config: PrivacyConfig) -> StepState:
     ``capture_text`` off the text is dropped and only its length (and, if configured, its
     salted hash) is recorded in ``features``.
     """
-    out = mark_sensitive(state, (), config)
+    out = mark_sensitive(state, state_paths(state), config)
     features = dict(out.features)
     text = out.task_text
     if config.capture_text or text is None:
@@ -325,6 +356,13 @@ def scrub_decision(d: Decision, opts: ScrubOptions) -> Decision:
         candidates=[_scrub_action(a, opts) for a in d.candidates],
         action=_scrub_action(d.action, opts),
         policy=red(d.policy),
+        candidate_set=None
+        if d.candidate_set is None
+        else dataclasses.replace(
+            d.candidate_set,
+            allow=None if d.candidate_set.allow is None else tuple(map(red, d.candidate_set.allow)),
+            deny=tuple(map(red, d.candidate_set.deny)),
+        ),
     )
 
 

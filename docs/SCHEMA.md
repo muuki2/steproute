@@ -94,7 +94,7 @@ Harness-neutral description of one routable step.
 | `sensitive` | boolean | `false` | Step must not leave the machine. |
 | `source` | string | `"personal"` | `replay` or `personal`; anything else raises `ValueError`. |
 | `task_text` | string or null | `null` | Optional, so traces can be shared without content. |
-| `features` | object | `{}` | Free-form extra features. |
+| `features` | object | `{}` | Free-form extra features. Documented keys: `paths` (list of strings, the file paths the step touches; read by sensitive detection, any other type ignored, dropped by `--scrub` exports like every list), `est_output_tokens` (number, overrides the policy's output-token estimate, `docs/POLICY.md`), and `task_text_len` / `task_text_hash` (written by the store when text is not captured, `docs/PRIVACY.md`). |
 
 ## Decision
 
@@ -103,12 +103,54 @@ Harness-neutral description of one routable step.
 | `decision_id` | string | required | Join key. `new_decision_id()` makes one. |
 | `ts` | number | required | Unix seconds. |
 | `state` | StepState | required | The state the policy saw. |
-| `candidates` | array of Action | required | Actions the policy chose among. |
+| `candidates` | array of Action | required | Actions the policy chose among. May be empty when `candidate_set` is set: the list was left out to keep the record small (see `CandidateSet`). |
 | `action` | Action | required | The chosen action. |
 | `policy` | string | required | Policy name. |
 | `propensity` | number | required | Probability the policy gave the chosen action. |
 | `predicted_success` | number or null | `null` | Predicted success probability of the chosen action. |
 | `predicted_cost` | number or null | `null` | Predicted cost in USD. |
+| `candidate_set` | CandidateSet or null | `null` | Compact, verifiable definition of the candidate set. `null` means `candidates` is the complete explicit list (records written before this field existed, and policies such as `FixedPolicy`). |
+
+Reading the candidate set: `steproute.core.rebuild_candidates(decision, catalog)` returns `candidates` when `candidate_set` is `null`, and otherwise rebuilds the list from `state` and the catalog and verifies it (fingerprint, count, and the explicit list when present), raising `CandidateSetMismatch` if anything disagrees. Readers must not treat an empty `candidates` as "no candidates" when `candidate_set` is set.
+
+## CandidateSet
+
+Added in schema `0.1` as a defaulted field of `Decision`, so older records stay valid. Frozen. Details in `docs/POLICY.md`.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `fingerprint` | string | required | `v1:` plus 32 hex characters: SHA-256 over the catalog fields that shape the set (per model, in file order: id, tier, efforts, local, context window, tools, holdout), the parameters below, and the enumeration version. Prices and `meta` are not covered. |
+| `count` | integer | required | Number of candidates (the feasible set the policy chose among). |
+| `max_depth` | integer | required | `enumerate_actions` depth. |
+| `include_holdout` | boolean | `false` | Whether holdout models were allowed. |
+| `allow` | array of string or null | `null` | `filter_feasible` allow list, sorted; `null` means no allow list. |
+| `deny` | array of string | `[]` | `filter_feasible` deny list, sorted. |
+
+The set is `filter_feasible(state, enumerate_actions(catalog, max_depth, include_holdout=...), catalog, allow=..., deny=..., include_holdout=...)` for the decision's own `state`, in enumeration order. Rebuilding it therefore needs the logged state to be the one the policy saw: run `mark_sensitive` before `decide`, not only on the write path, or the rebuilt set can differ (and verification then fails rather than returning a wrong list).
+
+A compact decision (state abbreviated):
+
+```json
+{
+  "decision_id": "9c1d0e2f3a4b5c6d7e8f9a0b1c2d3e4f",
+  "ts": 1767225600.25,
+  "state": {"harness": "proxy", "session_id": "sess-7", "step_idx": 3, "kind": "main", "prompt_tokens": 20000},
+  "candidates": [],
+  "action": {"model": "claude-haiku-5-5", "effort": "low", "escalate_to": null},
+  "policy": "scored",
+  "propensity": 0.9500900900900901,
+  "predicted_success": 0.91,
+  "predicted_cost": 0.0021,
+  "candidate_set": {
+    "fingerprint": "v1:57e9bb21b743682d97bb2933ebc37b5c",
+    "count": 555,
+    "max_depth": 2,
+    "include_holdout": false,
+    "allow": null,
+    "deny": []
+  }
+}
+```
 
 ## Outcome
 
@@ -139,7 +181,7 @@ For an escalated outcome the token fields are sums over attempts and serve stati
 
 ## JSON Schema
 
-The generated schema is `src/steproute/core/trace.schema.json` and ships in the package. Load it with `steproute.core.schema_gen.load_json_schema()`. It has `$defs` for `Action`, `ModelProfile`, `StepState`, `Decision` and `Outcome`. A test fails if it drifts from the dataclasses. After changing a dataclass, regenerate it:
+The generated schema is `src/steproute/core/trace.schema.json` and ships in the package. Load it with `steproute.core.schema_gen.load_json_schema()`. It has `$defs` for `Action`, `PriceTier`, `ModelProfile`, `StepState`, `CandidateSet`, `Decision` and `Outcome`. A test fails if it drifts from the dataclasses. After changing a dataclass, regenerate it:
 
 ```
 uv run python -m steproute.core.schema_gen --write
@@ -186,7 +228,8 @@ A decision with a two-step cascade:
   "policy": "rule-baseline",
   "propensity": 0.8,
   "predicted_success": 0.91,
-  "predicted_cost": 0.0123
+  "predicted_cost": 0.0123,
+  "candidate_set": null
 }
 ```
 

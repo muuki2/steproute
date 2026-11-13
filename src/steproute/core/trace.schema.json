@@ -281,6 +281,47 @@
         "prompt_tokens"
       ]
     },
+    "CandidateSet": {
+      "type": "object",
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "max_depth": {
+          "type": "integer"
+        },
+        "include_holdout": {
+          "type": "boolean"
+        },
+        "allow": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "fingerprint",
+        "count",
+        "max_depth"
+      ]
+    },
     "Decision": {
       "type": "object",
       "properties": {
@@ -322,6 +363,16 @@
           "anyOf": [
             {
               "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidate_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CandidateSet"
             },
             {
               "type": "null"

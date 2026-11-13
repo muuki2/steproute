@@ -16,6 +16,7 @@ from steproute.core import (
     EFFORTS,
     SCHEMA_VERSION,
     Action,
+    CandidateSet,
     Decision,
     ModelProfile,
     Outcome,
@@ -98,6 +99,15 @@ states = st.builds(
     task_text=st.none() | text,
     features=json_dicts,
 )
+candidate_sets = st.builds(
+    CandidateSet,
+    fingerprint=text,
+    count=ints,
+    max_depth=ints,
+    include_holdout=st.booleans(),
+    allow=st.none() | st.lists(text, max_size=3).map(tuple),
+    deny=st.lists(text, max_size=3).map(tuple),
+)
 decisions = st.builds(
     Decision,
     decision_id=text,
@@ -109,6 +119,7 @@ decisions = st.builds(
     propensity=finite,
     predicted_success=st.none() | finite,
     predicted_cost=st.none() | finite,
+    candidate_set=st.none() | candidate_sets,
 )
 outcomes = st.builds(
     Outcome,
@@ -130,6 +141,7 @@ ALL = [
     (Action, actions),
     (ModelProfile, profiles),
     (StepState, states),
+    (CandidateSet, candidate_sets),
     (Decision, decisions),
     (Outcome, outcomes),
 ]
@@ -306,6 +318,7 @@ def test_json_schema_shape() -> None:
         "PriceTier",
         "ModelProfile",
         "StepState",
+        "CandidateSet",
         "Decision",
         "Outcome",
     }
@@ -362,7 +375,9 @@ def test_doc_examples_validate_and_roundtrip() -> None:
     assert dec.decision_id == out.decision_id
 
 
-@pytest.mark.parametrize("cls", [Action, PriceTier, ModelProfile, StepState, Decision, Outcome])
+@pytest.mark.parametrize(
+    "cls", [Action, PriceTier, ModelProfile, StepState, CandidateSet, Decision, Outcome]
+)
 def test_doc_documents_every_field(cls: type) -> None:
     md = SCHEMA_MD.read_text(encoding="utf-8")
     section = re.search(rf"^## {cls.__name__}\n(.*?)(?=^## )", md, flags=re.S | re.M)
