@@ -174,7 +174,7 @@ When the realized token counts equal the planned ones, `realized_cost` equals th
 `CostModelError` (a `ValueError`) is raised for:
 
 - a model not in the catalog, or an effort the model does not list;
-- a missing `effort_output_mult` entry (add `1.0` if unmeasured; it is never defaulted silently);
+- a partly filled `effort_output_mult` that lacks the effort being priced. An empty table means 1.0 for every effort (unmeasured); a table that lists some efforts but not this one is treated as a mistake, and the catalog loader rejects it up front;
 - a probability outside [0, 1] or NaN, from a number, a sequence or a callable;
 - a sequence of the wrong length, or a single `p_success` for a cascade;
 - negative or non-finite token counts, prices or multipliers, or `cache_write_mult < 1`;

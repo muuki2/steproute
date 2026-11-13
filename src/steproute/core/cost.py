@@ -95,10 +95,14 @@ def _output_mult(profile: ModelProfile, effort: str) -> float:
         raise CostModelError(
             f"{profile.id}: effort {effort!r} is not supported (efforts {list(profile.efforts)})"
         )
+    if not profile.effort_output_mult:
+        # No multipliers given at all: unmeasured, so no adjustment.
+        return 1.0
     if effort not in profile.effort_output_mult:
+        # A partly filled table is far more likely a mistake than a choice.
         raise CostModelError(
-            f"{profile.id}: effort_output_mult has no entry for {effort!r}; add one to the "
-            "catalog (1.0 if unmeasured)"
+            f"{profile.id}: effort_output_mult has no entry for {effort!r}; give every effort "
+            "a multiplier (1.0 if unmeasured) or leave the table empty"
         )
     return _check_number(profile.effort_output_mult[effort], f"{profile.id}: effort_output_mult")
 

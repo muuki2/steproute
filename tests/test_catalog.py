@@ -26,7 +26,7 @@ price_out = 2.0
 context_window = 1000
 tier = 2
 efforts = ["low", "high"]
-effort_output_mult = { low = 1.0 }
+effort_output_mult = { low = 1.0, high = 1.0 }
 effort_map = { low = "lo" }
 verified = true
 
@@ -207,6 +207,11 @@ def test_verified_catalog_does_not_warn(tmp_path: Path) -> None:
         ({"efforts": ["low", "low"]}, "efforts"),
         ({"effort_output_mult": {"high": 1.0}}, "effort_output_mult"),
         ({"effort_output_mult": {"medium": -1.0}}, "effort_output_mult"),
+        # Partly filled: "low" has a multiplier, "high" does not.
+        (
+            {"efforts": ["low", "high"], "effort_output_mult": {"low": 1.0}},
+            "effort_output_mult",
+        ),
         ({"effort_map": {"high": "x"}}, "effort_map"),
         ({"price_in": -0.1}, "price_in"),
         ({"price_out": -1}, "price_out"),

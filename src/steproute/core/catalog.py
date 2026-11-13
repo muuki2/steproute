@@ -85,6 +85,16 @@ def _validate(p: ModelProfile) -> None:
                 raise _fail(mid, name, f"{k!r} must not be negative, got {v}")
             if name == "effort_map" and not v:
                 raise _fail(mid, name, f"{k!r} must map to a non-empty string")
+    # All or nothing: an empty table means "unmeasured, no adjustment"; a partly filled one
+    # would make the cost model fail on the first decision that uses a missing effort.
+    unpriced = [e for e in p.efforts if e not in p.effort_output_mult]
+    if p.effort_output_mult and unpriced:
+        raise _fail(
+            mid,
+            "effort_output_mult",
+            f"has no entry for {unpriced}; give every effort a multiplier (1.0 if unmeasured) "
+            "or leave the table empty",
+        )
     if p.cache_min_tokens < 0:
         raise _fail(mid, "cache_min_tokens", f"must not be negative, got {p.cache_min_tokens}")
     latency = {name: getattr(p, name) for name in _LATENCY_FIELDS}

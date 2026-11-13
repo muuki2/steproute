@@ -30,7 +30,7 @@ tier = 4
 cache_write_mult = 1.25
 cache_read_mult = 0.1
 efforts = ["low", "medium", "high", "xhigh", "max"]
-effort_output_mult = { low = 1.0, medium = 1.0 }
+effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
 effort_map = { low = "low", medium = "medium" }
 verified = true
 
@@ -48,6 +48,7 @@ Fields are those of `ModelProfile` (see `docs/SCHEMA.md` for types and defaults)
 - unknown keys (at the top level, in a model, or in a price tier) and duplicate ids;
 - efforts outside `EFFORTS` (`none, low, medium, high, xhigh, max`), an empty or duplicated `efforts` list;
 - `effort_output_mult` or `effort_map` keys that are not in the model's `efforts`;
+- a partly filled `effort_output_mult`: give every listed effort a multiplier, or leave the table empty (which means 1.0 for all, unmeasured);
 - negative prices, multipliers or `effort_output_mult` values, a non-positive `context_window`, a negative `tier`;
 - price tiers whose `above_tokens` are not positive and strictly increasing.
 

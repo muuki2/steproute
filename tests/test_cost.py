@@ -558,3 +558,16 @@ def test_monotone_in_prices(
             changes["price_tiers"] = tiers
         bumped.append(dataclasses.replace(m, **changes))  # type: ignore[arg-type]
     assert expected_cost(s, a, bumped, est, ps).total_usd >= base * (1 - 1e-12)
+
+
+def test_empty_effort_output_mult_means_no_adjustment() -> None:
+    # An empty table is "unmeasured": it prices like an explicit 1.0 for every effort.
+    explicit = CAT.get(OPUS)
+    assert set(explicit.effort_output_mult.values()) == {1.0}
+    empty = dataclasses.replace(explicit, effort_output_mult={})
+    s = state(10_000)
+    a = Action(OPUS, "high")
+    assert (
+        expected_cost(s, a, [empty], 500, 0.5).total_usd
+        == expected_cost(s, a, [explicit], 500, 0.5).total_usd
+    )
