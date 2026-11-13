@@ -1103,3 +1103,101 @@ Every outcome: two requests per subagent counted via `turn.step`, `turn_usage_ma
 - Resumed runs, aborted runs, test commands, tool errors and the effort rewrite are exercised by unit tests, not by a real session.
 
 **Confidence.** High for the mechanism (docs, this build's declarations, and three sessions whose token counts match Claude Code's own report). Medium for anything that depends on the agent type list and the background default, which the docs say change between versions.
+
+## 13. Issue 15: the dsh plugin, checked against the pinned source and run in-process
+
+*Added by issue 15, checked 2026-11-13.* Source read in the npm packages of `@deepseek-ai/dsh@0.2.2-rc.3` and its exact-version `@deepseek-ai/dsh-*` closure, installed with `npm ci --ignore-scripts` into `tests/dsh/pinned/` (lockfile there; tarball integrity `sha512-S+4oUYVK…qRg==` for `@deepseek-ai/dsh`). Every package ships its `src/`; the paths below are `<package>/src/<file>:<line>` in those tarballs, which correspond to `packages/**/<package>/src/` at tag `dsh-v0.2.2-rc.3`. Where section 3 cites the same lines at HEAD, the tarball agrees with its "one lower at the tag" note (`dsh-agent/src/model-selection.ts:112-114` for `select`). The plugin is `plugins/dsh`, documented in `docs/DSH.md`.
+
+**Answer.**
+
+- **Section 3's mechanism holds, and the hook point is now settled.** `agent.model.select()` called inside `tools/post-execute` changes the model and effort of the next step. In a session on the real dsh libraries (below) the `model/selection` event landed between the batch's `tool/call` and `tool/result`, the next request reached the adapter with the selected provider, model and effort, the `[model changed …]` notice was injected, and the logged `assistant/message.message.source` named the selected route.
+- **The first step of a turn cannot be routed.** `preStep` reads `this.model.current()` as its first act (`dsh-agent-loop/src/agent.ts:294`), and the turn reaches it from `turn/start` with nothing awaited in between (`agent.ts:333-353`). The plugin logs a decision for that step and never applies it.
+- **Only the last call of a tool batch should ask.** Calls of a batch commit in model order; each call's post-execute runs just before its own `tool/result` is appended (`dsh-tools/src/batch.ts:139-150`, `pipeline.ts:343-361`), and calls that fail before dispatch skip post-execute altogether (`pipeline.ts:166-178, 230-232`). So the last call's post-execute is the one point that sees every result of the batch and still precedes the next step's read.
+- **The `session/event` feed cannot call `select()`.** A listener runs inside the append's publication and a nested append throws "session append cannot reenter while another append is being published" (`dsh-session/src/index.ts:957-962`); the feed is fire-and-forget (`index.ts:66-79`). The plugin only observes it.
+- **The plugin writes no session event of its own.** Its only write is `select()`, which appends dsh's own `model/selection`. (Plugin records, if ever needed, are `plugin:<name>` types that dsh appends with `ignorable: true` itself, `dsh-session/src/index.ts:929-946`.)
+- **New facts the spike did not record**, each used by the plugin:
+  - The DeepSeek API route is provider **`deepseek-official`** (`dsh-llm-deepseek-api-key/src/index.ts:20`), and the default selection is `deepseek-official`/`deepseek-flash` (`dsh-base/cordis.patch.yml:90-94`). Its efforts are `off|low|high|max` (`dsh-llm-deepseek/src/model-info.ts:6-31`); steproute's `none` maps to `off`.
+  - **dsh 0.2.2-rc.3 requires Node 24.9.0 or later** (`engines.node` of `@deepseek-ai/dsh`), and its launcher runs only under `import.meta.main` (`dsh/src/bin.ts:76`), which Node 22.15 lacks.
+  - The headless persona names the model: "You are a coding agent powered by the {{model}} model." (`dsh-headless/cordis.patch.yml:12`), and the headless runner installs the model-switch notice (`dsh-headless/src/index.ts:383`). A switch therefore changes the system prompt as well as adding the notice.
+  - `engines.dsh` decides compatibility alone when present; a mismatched bundle is skipped and dsh starts without it (`dsh-app-boot/src/profile.ts:699-705`). The plugin pins it to exactly `0.2.2-rc.3`.
+  - A plugin needs no build and no dsh import: a module exporting `name` and `apply` loads (`dsh/docs/user/develop/basic/publish.md:46-54`), and a config schema is any Standard Schema object (`cordis/src/fiber.ts:50-61`).
+  - `ctx.llm.listProviders()` lists the routes that have an adapter (`dsh-llm/src/index.ts:493-500`). The plugin applies no decision to an unlisted route, since a step on a route with no adapter fails.
+  - Shell tool results: a non-zero exit is not an error. It ends the model-facing text with `[exit code: N]`, and stopped, timed-out or backgrounded runs end with other bracketed markers (`dsh-tool-bash/src/render.ts:17-66`). Tool names in the default bundle: `read`, `write`, `edit`, `apply_patch`, `read_image` (`dsh-tool-fs`), `grep`, `glob` (`dsh-tool-fs-search`), `bash`, `pwsh`, `web_search`, `web_fetch`.
+  - An approval answered `rejected` becomes a tool error with code `APPROVAL_REJECTED` and the text "the user rejected tool …" (`dsh-tools/src/pipeline.ts:466-468`); cancellations and missing answerers have their own codes (`dsh-tools/src/error-codes.ts`).
+  - The non-interactive entry is `dsh headless "<task>"`, short for `dsh --profile headless`; launcher flags follow the profile name (`dsh/src/args.ts:90-99, 205-208`). There is no `-p`.
+  - A subagent's session header has `origin: 'subagent'` and `parentSession` (`dsh-tool-subagent/src/model-selection-settings.ts:63`).
+
+**Seams the plugin relies on.**
+
+| Seam | Kind | Where (0.2.2-rc.3) |
+|---|---|---|
+| `agent/created` `{ agent, source }` | serial | `dsh-agent/src/runtime-types.ts:291` |
+| `agent/disposed` `{ agent }` | emit | `runtime-types.ts:300` |
+| `agent/pre-step` `{ agent, messages, turn, step, signal, modelSelection }` | waterfall | `runtime-types.ts:351`; called at `dsh-agent-loop/src/agent.ts:302-305` |
+| `agent.model.current()` / `agent.model.select({ provider, model, reasoningEffort })` | method | `runtime-types.ts:61,71`; `dsh-agent/src/model-selection.ts:105-115` |
+| `tools/post-execute` `(exec, result, next)` | waterfall | `dsh-tools/src/events.ts:41`; run at `pipeline.ts:494-497` |
+| `session/event` `(session, event)` | emit | `dsh-session/src/index.ts:79` |
+| `session/flush` `(session)` | parallel, awaited | `index.ts:87`; awaited by the headless runner before exit, `dsh-headless/src/index.ts:435` |
+| `ctx.llm.listProviders()` | method | `dsh-llm/src/index.ts:498` |
+| events `turn/start`, `turn/end`, `step/start`, `step/end`, `assistant/message`, `assistant/attempt`, `tool/call`, `tool/result`, `request/header` | log | `dsh-session/src/types.ts:294,303,305,307,349,363,369,383,398` |
+| `approval/asked`, `approval/decided` (`allowed-once`, `rejected`, `cancelled`, `unavailable`) | log | `dsh-user-approval/src/types.ts:32,44,55` |
+| `llm/retry`, `model/selection` | log | `dsh-llm-retry/src/types.ts:9`; `dsh-agent/src/types.ts:121` |
+| `TokenUsage` (disjoint counts) | type | `dsh-llm/src/types.ts:174-196` |
+
+Not used, and why: `llm/stream` (requests deep-frozen, `dsh-llm/src/index.ts:64-76`); `agent/request` (deprecated, throws on a model or effort change, `runtime-types.ts:363-374`, `agent.ts:641-646`); `agent/turn-stopping` (restoring the user's model there was tried and doubled the switches per turn); the compressed log file (the live feed carries the same events).
+
+**Outbound paths in the headless profile, and how the test sessions switch them off.** Read in the same tarballs; each is on by default unless said otherwise. The switches are in the patch `scripts/dsh_session.sh` writes, plus the environment it sets.
+
+| Path | Where | Switched off by |
+|---|---|---|
+| Model requests of the DeepSeek route (`POST <baseURL>/v1/messages`, images to `/v1/files`) | `dsh-llm-deepseek/src/adapter.ts:142-153`, `config.ts:116-119, 311` | `llm-deepseek` row `baseURL` set to the mock upstream on loopback; the key is read from `STEPROUTE_MOCK_UPSTREAM_KEY`, a placeholder |
+| Headers on those requests: anonymous user id, session id, user agent | `adapter.ts:145-152`, `dsh-llm/src/attribution.ts:55-90` | cannot be switched off; they go to the loopback mock, and the id file lives in the scratch `DSH_HOME` |
+| Session log in each request body (`dsh_session_log`) | `dsh-base/cordis.patch.yml:43-44`, `dsh-session-log-deepseek/src/index.ts`, merged at `dsh-llm-deepseek/src/request-extensions.ts:42` | `session-log-deepseek: disabled: true` |
+| Plugin names and versions in each request body (`dsh_plugin_packages`) | `cordis.patch.yml:85-86`, `dsh-plugin-package-inventory-deepseek/src/index.ts:33,205` | `plugin-package-inventory-deepseek: disabled: true` |
+| `/models` listing fetch | `dsh-llm-deepseek-api-key/src/index.ts:47-52` | made only for the official origin; the mock's origin is not |
+| Session title from a second model call | `cordis.patch.yml:67-77` | `session-title-llm: disabled: true` |
+| OTLP session telemetry to `dsh-otel-collector.deepseeksvc.com` (on feedback events only) | `cordis.patch.yml:205-232` | `session-telemetry-otel: disabled: true`, `DSH_TELEMETRY_DISABLED=1`, `DSH_TELEMETRY_MODE=DISABLED`, and `DSH_TELEMETRY_OTLP_URL` pointed at a dead loopback port |
+| `web_search` (the query and the user's question) and `web_fetch` (any URL) | `cordis.patch.yml:484-505` (rows at 490-501), `dsh-web-deepseek-api/src/index.ts:73` | `tool-web`, `web-search-deepseek`, `web-fetch-http`, `web-deepseek-api`: `disabled: true` |
+| Shell tool (the model could run `curl`; the sandbox limits writes, not network) | `cordis.patch.yml:281-283` | `tool-bash`, `tool-jobs`: `disabled: true` (the scripted model never asks for a shell) |
+| `llm-pi-ai` routes, the account route, the plugin manager (pnpm, registry) | `cordis.patch.yml:16-22, 120-136, 549-550` | `llm-pi-ai`, `llm-deepseek-account`, `plugin-manager`: `disabled: true` (headless already disables `deepseek-account`) |
+| Compaction (a summary model call on the session's own route) | `cordis.patch.yml:355-361` | left on: it would call the loopback mock, and the session stays far below its threshold |
+
+No update check, remote config or feature-flag fetch was found at startup. Not mounted in headless: product telemetry and analytics (desktop only), the web server, the MCP client, and the optional bundles (translation, speech model download, plugin market, forge, liveshare, auto-review). HOME, `DSH_HOME` and `DSH_AGENTS_HOME` (default `~/.agents`, read for skills and `AGENTS.md`/`CLAUDE.md`) point into the scratch directory (`dsh-home-paths/src/index.ts:12-27`); dsh refuses `DSH_*` names from `.env` files (`dsh-app-boot/src/index.ts:158`).
+
+**Sessions run.**
+
+- **Through the `dsh` command line: none.** `scripts/dsh_session.sh route <scratch>` was started once and refused before doing anything: `dsh 0.2.2-rc.3 needs Node 24.9 or later (found v22.15.0); not running` (exit 3). This machine has Node 22.15.0 at most (`node` and every nvm version), and installing Node 24 would mean a download outside what was approved. Acceptance criteria 1 and 2 are therefore **not met through the CLI**. The script, the mock upstream runner (`scripts/dsh_mock_upstream.py`, checked by hand with two requests) and the patch are ready but unrun.
+- **In-process sessions on the real dsh libraries: eight.** Five ran with `scripts/dsh_inprocess_session.sh` and three by hand with the same harness, all on Node 22.15.0, below dsh's stated minimum; the core libraries loaded and ran. The harness (`tests/dsh/pinned/inprocess_session.mjs`) mounts `dsh-session`, `dsh-session-projection`, `dsh-agent`, `dsh-llm`, `dsh-system-prompt` (with the headless persona), `dsh-tools`, `dsh-tool-executor-native` and `dsh-agent-loop` from the pinned install. Next to them it mounts a scripted adapter registered as `deepseek-official` (efforts `off|low|high|max`), one `read_note` tool, and `plugins/dsh/index.js`. It creates the agent with `installModelSelection`, as the headless runner does, runs two turns of three steps (two single-call tool batches, then an answer), and flushes. Nothing but the plugin's loopback calls leaves the process, and no key exists. The first hand run failed at the first request because the scripted adapter declared no efforts ("does not support reasoning effort \"high\""); the plugin was not involved. Command shape:
+
+  ```
+  scripts/dsh_inprocess_session.sh shadow|route <scratch> [KILL_AFTER_REQUEST|none]
+  # steproute serve --config plugins/dsh/service/steproute.toml --port 0 --store <scratch>/traces
+  # (cd tests/dsh/pinned && env -i HOME=<scratch>/home PATH=... node inprocess_session.mjs <url> <mode> [--kill-after-step N --pid PID])
+  ```
+
+  The three final runs used the committed code, except for shadow mode's no-wait change, which was made after them and is covered by unit tests:
+
+  | Run | Mode | Service | Ran per request (model, effort) | Decisions / outcomes / joined | Turns |
+  |---|---|---|---|---|---|
+  | A | route | killed (SIGKILL) as request 3 started | flash high, v4-pro low, v4-pro low, v4-pro low, flash high, flash high | 3 / 1 / 1 | completed, completed |
+  | B | route | up | flash high, then v4-pro low ×5 | 6 / 6 / 6, join rate 100 % | completed, completed |
+  | C | shadow | up | flash high ×6 | 6 / 6 / 6, join rate 100 % | completed, completed |
+
+  Every decision was `deepseek-v4-pro` `low`: the rule baseline's default tier 5, with `medium` moved to DeepSeek's nearest effort, `low`.
+
+  In B, the two turn-start steps were logged `turn_start` and not applied. The four steps after a tool batch were applied (`routed`, `selection_ran = true`, `final_model = deepseek-v4-pro`). One `model/selection` was written, and one notice was injected: `[model changed: assistant turns above this point were generated by deepseek-flash; the session continues with deepseek-v4-pro]`. Tokens per outcome are the adapter's scripted counts. For example, step 2 of B has `input_tokens 1000`, `output_tokens 31`, `cache_read_tokens 800`, and the state for it has `prompt_tokens 937`, `cached_prefix_tokens 900`, owner `deepseek-flash`/`high`. The service priced the outcomes from the catalog ($0.0091 for B); the tokens are scripted, so no money was spent.
+
+  In A, the service died during the third request, whose step already had its decision. The fourth step, a turn start, ran on the last selection. At the fifth step the plugin found the service refusing and put the user's `deepseek-flash`/`high` back. Both turns completed. The two outcomes due after the kill were never stored: they were kept in memory and lost at exit.
+
+  Runs 4 and 5 of the eight used an earlier version that restored the user's model at every turn end. It switched model twice per turn, which is why it was dropped (`docs/DSH.md`, decision 1).
+
+**Delay per step.** `signals.plugin_wait_ms` is the time a routed step waited in post-execute. In run B it was 4.18, 0.85, 2.13 and 1.19 ms, against `decide_ms` of 4.15, 0.95, 2.27 and 1.41 ms. The first `/decide` of a process took about 10 ms (connection and service warm-up), and a turn-start step waits for nothing. Measured on an Apple M-series laptop with the service on loopback. In shadow mode no step waits.
+
+**Not done or not verified.**
+
+- No session ran through the `dsh` CLI (Node 24.9 needed). So these are not verified: that the CLI loads the plugin row from `--patch` and from `dsh plugin add`; that `dsh-llm-deepseek` against the mock gives the same `assistant/message.usage` mapping; that the outbound-path patch above leaves only loopback traffic; that dsh's logger shows the plugin's lines; and the `session/flush` wait before the headless exit.
+- Subagents (`dsh-tool-subagent`), approvals, shell test runs, retries and plan mode are covered by unit tests on a fake loop, not by a real dsh run.
+- Whether `web_fetch` can reach loopback or private hosts was not settled (the base patch comment and `dsh-base/README.md` disagree); the test patch turns it off.
+- `cacheWriteTokens` from the DeepSeek adapter, and the cache effect of an effort change on DeepSeek, were not observed.
+
+**Confidence.** High for the seam names, signatures, event payloads and the ordering facts above: they were read in the tarball sources, and the core ones were exercised in the in-process sessions. Medium for anything that needs the CLI composition (the outbound-path switches, plugin loading through a bundle, the headless exit), which was read, not run.
