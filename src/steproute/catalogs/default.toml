@@ -1,0 +1,253 @@
+# steproute default model catalog.
+#
+# Format and field meanings: docs/CATALOG.md. Sources for every price, id and limit:
+# docs/INTEGRATION-NOTES.md section 7 (checked 2026-11-13). Prices are USD per million tokens.
+#
+# ASSUMPTIONS, NOT MEASUREMENTS (edit freely):
+#   * `tier` is a starting guess at cascade strength. It is not measured.
+#   * `effort_output_mult` is 1.0 for every effort. Nobody has measured these; they are
+#     placeholders to be replaced from the pilot replay (issue 18). `verified` does NOT cover them.
+#
+# `verified = true` covers price, cache multipliers, context window and effort levels.
+# DeepSeek caveat: cache scope per model and the effect of toggling thinking are undetermined
+# (see meta.open_cache_questions); `verified` does not claim they are known.
+# Ollama context_window is the operational cap (decision D2), not the native limit
+# (meta.native_context). Run Ollama with OLLAMA_CONTEXT_LENGTH=32768.
+# DeepSeek price_in / price_out are PEAK prices (conservative for spend caps); off-peak is in meta.
+
+# --- Anthropic (cache_write_mult is the 5-minute write; the 1-hour write is in meta) ---
+
+[[model]]
+id = "claude-haiku-5-5"
+provider = "anthropic"
+price_in = 0.10
+price_out = 0.50
+context_window = 1000000
+tier = 4
+cache_write_mult = 1.25
+cache_read_mult = 0.1
+efforts = ["low", "medium", "high", "xhigh", "max"]
+effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
+effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
+effort_change_keeps_cache = false
+verified = true
+
+# Prompts above 100,000 tokens (cache reads and writes included) pay these rates on the whole request.
+[[model.price_tiers]]
+above_tokens = 100000
+price_in = 0.50
+price_out = 2.50
+
+[model.meta]
+cache_write_1h_mult = 2.0
+default_effort = "medium"
+native_context = 1000000
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked = "2026-11-13"
+
+[[model]]
+id = "claude-sonnet-5-5"
+provider = "anthropic"
+price_in = 2.0
+price_out = 10.0
+context_window = 1000000
+tier = 5
+cache_write_mult = 1.25
+cache_read_mult = 0.05
+efforts = ["low", "medium", "high", "xhigh", "max"]
+effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
+effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
+effort_change_keeps_cache = false
+verified = true
+
+[model.meta]
+cache_write_1h_mult = 2.0
+default_effort = "high"
+native_context = 1000000
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked = "2026-11-13"
+
+[[model]]
+id = "claude-opus-5-5"
+provider = "anthropic"
+price_in = 4.0
+price_out = 20.0
+context_window = 1000000
+tier = 6
+cache_write_mult = 1.25
+cache_read_mult = 0.05
+efforts = ["low", "medium", "high", "xhigh", "max"]
+effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
+effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
+effort_change_keeps_cache = false
+verified = true
+
+[model.meta]
+cache_write_1h_mult = 2.0
+default_effort = "medium"
+native_context = 1000000
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked = "2026-11-13"
+
+[[model]]
+id = "claude-fable-5-2"
+provider = "anthropic"
+price_in = 8.0
+price_out = 40.0
+context_window = 1000000
+tier = 7
+cache_write_mult = 1.25
+cache_read_mult = 0.025
+efforts = ["low", "medium", "high", "xhigh", "max"]
+effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
+effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
+effort_change_keeps_cache = false
+verified = true
+
+[model.meta]
+cache_write_1h_mult = 2.0
+default_effort = "high"
+native_context = 1000000
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked = "2026-11-13"
+
+# --- DeepSeek (peak prices; no write premium; cache_read_mult = hit price / miss price) ---
+# `medium` and `xhigh` are DeepSeek aliases of `high`, so they are not listed.
+
+[[model]]
+id = "deepseek-flash"
+provider = "deepseek"
+price_in = 0.30
+price_out = 1.20
+context_window = 1048576
+tier = 4
+cache_write_mult = 1.0
+cache_read_mult = 0.02
+efforts = ["none", "low", "high", "max"]
+effort_output_mult = { none = 1.0, low = 1.0, high = 1.0, max = 1.0 }
+effort_map = { none = "none", low = "low", high = "high", max = "max" }
+effort_change_keeps_cache = false
+verified = true
+
+[model.meta]
+default_effort = "high"
+native_context = 1048576
+price_in_offpeak = 0.15
+price_out_offpeak = 0.60
+cache_hit_price_peak = 0.006
+cache_hit_price_offpeak = 0.003
+offpeak_note = "peak 01:00-04:00 and 06:00-10:00 UTC Mon-Fri; off-peak is half"
+open_cache_questions = "cache scope per model and the effect of toggling thinking are not documented"
+source = "https://api-docs.deepseek.com/quick_start/pricing"
+checked = "2026-11-13"
+
+[[model]]
+id = "deepseek-v4-pro"
+provider = "deepseek"
+price_in = 1.32
+price_out = 3.96
+context_window = 1048576
+tier = 5
+cache_write_mult = 1.0
+cache_read_mult = 0.0333333333
+efforts = ["none", "low", "high", "max"]
+effort_output_mult = { none = 1.0, low = 1.0, high = 1.0, max = 1.0 }
+effort_map = { none = "none", low = "low", high = "high", max = "max" }
+effort_change_keeps_cache = false
+verified = true
+
+[model.meta]
+default_effort = "high"
+native_context = 1048576
+price_in_offpeak = 0.66
+price_out_offpeak = 1.98
+cache_hit_price_peak = 0.044
+cache_hit_price_offpeak = 0.022
+offpeak_note = "peak 01:00-04:00 and 06:00-10:00 UTC Mon-Fri; off-peak is half"
+open_cache_questions = "cache scope per model and the effect of toggling thinking are not documented"
+source = "https://api-docs.deepseek.com/quick_start/pricing"
+checked = "2026-11-13"
+
+# --- Ollama (local, price 0, context capped at 32768 per decision D2) ---
+
+[[model]]
+id = "qwen3.5:9b"
+provider = "ollama"
+price_in = 0.0
+price_out = 0.0
+context_window = 32768
+tier = 1
+local = true
+efforts = ["none", "medium"]
+effort_output_mult = { none = 1.0, medium = 1.0 }
+effort_map = { none = "false", medium = "true" }
+verified = true
+
+[model.meta]
+native_context = 262144
+size_gb = 6.6
+reasoning_control = "think on or off"
+source = "https://ollama.com/library/qwen3.5:9b"
+checked = "2026-11-13"
+
+[[model]]
+id = "gpt-oss:20b"
+provider = "ollama"
+price_in = 0.0
+price_out = 0.0
+context_window = 32768
+tier = 2
+local = true
+efforts = ["low", "medium", "high"]
+effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0 }
+effort_map = { low = "low", medium = "medium", high = "high" }
+verified = true
+
+[model.meta]
+default_effort = "medium"
+native_context = 131072
+size_gb = 14.0
+reasoning_control = "low/medium/high; thinking cannot be disabled"
+source = "https://ollama.com/library/gpt-oss:20b"
+checked = "2026-11-13"
+
+[[model]]
+id = "qwen3-coder:30b"
+provider = "ollama"
+price_in = 0.0
+price_out = 0.0
+context_window = 32768
+tier = 3
+local = true
+efforts = ["medium"]
+effort_output_mult = { medium = 1.0 }
+effort_map = {}
+verified = true
+
+[model.meta]
+native_context = 262144
+size_gb = 19.0
+reasoning_control = "none"
+source = "https://ollama.com/library/qwen3-coder:30b"
+checked = "2026-11-13"
+
+[[model]]
+id = "devstral:24b"
+provider = "ollama"
+price_in = 0.0
+price_out = 0.0
+context_window = 32768
+tier = 3
+local = true
+holdout = true
+efforts = ["medium"]
+effort_output_mult = { medium = 1.0 }
+effort_map = {}
+verified = true
+
+[model.meta]
+native_context = 131072
+size_gb = 14.0
+reasoning_control = "none"
+source = "https://ollama.com/library/devstral:24b"
+checked = "2026-11-13"

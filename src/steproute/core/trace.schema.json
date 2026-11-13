@@ -35,6 +35,25 @@
         "model"
       ]
     },
+    "PriceTier": {
+      "type": "object",
+      "properties": {
+        "above_tokens": {
+          "type": "integer"
+        },
+        "price_in": {
+          "type": "number"
+        },
+        "price_out": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "above_tokens",
+        "price_in",
+        "price_out"
+      ]
+    },
     "ModelProfile": {
       "type": "object",
       "properties": {
@@ -77,6 +96,33 @@
         "meta": {
           "type": "object",
           "additionalProperties": {}
+        },
+        "tier": {
+          "type": "integer"
+        },
+        "tools": {
+          "type": "boolean"
+        },
+        "holdout": {
+          "type": "boolean"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "price_tiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PriceTier"
+          }
+        },
+        "effort_map": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "effort_change_keeps_cache": {
+          "type": "boolean"
         }
       },
       "required": [

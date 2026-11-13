@@ -29,6 +29,7 @@ __all__ = [
     "Decision",
     "ModelProfile",
     "Outcome",
+    "PriceTier",
     "StepState",
     "UnknownFieldWarning",
     "effort_rank",
@@ -209,6 +210,15 @@ class Action(_Record):
         return " -> ".join(f"{a.model} ({a.effort})" for a in self.chain())
 
 
+@dataclass(frozen=True)
+class PriceTier(_Record):
+    """Prices that apply to a request whose prompt is longer than ``above_tokens``."""
+
+    above_tokens: int
+    price_in: float
+    price_out: float
+
+
 @dataclass
 class ModelProfile(_Record):
     """What the router knows about one model. Prices are USD per million tokens."""
@@ -224,6 +234,26 @@ class ModelProfile(_Record):
     efforts: tuple[str, ...] = ("medium",)
     effort_output_mult: dict[str, float] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
+    tier: int = 0
+    tools: bool = True
+    holdout: bool = False
+    verified: bool = False
+    price_tiers: tuple[PriceTier, ...] = ()
+    effort_map: dict[str, str] = field(default_factory=dict)
+    effort_change_keeps_cache: bool = False
+
+    def prices_for(self, prompt_tokens: int) -> tuple[float, float]:
+        """``(price_in, price_out)`` in force for a request with ``prompt_tokens`` of prompt.
+
+        ``prompt_tokens`` counts every input token, cache reads and writes included. The base
+        prices apply up to and including the first tier's ``above_tokens``; a request above a
+        threshold pays that tier's rate on the whole request.
+        """
+        price_in, price_out = self.price_in, self.price_out
+        for t in self.price_tiers:
+            if prompt_tokens > t.above_tokens:
+                price_in, price_out = t.price_in, t.price_out
+        return price_in, price_out
 
 
 @dataclass
@@ -283,4 +313,11 @@ class Outcome(_Record):
 
 
 #: Every record type, in definition order (the JSON Schema ``$defs`` follow this order).
-RECORD_TYPES: tuple[type[_Record], ...] = (Action, ModelProfile, StepState, Decision, Outcome)
+RECORD_TYPES: tuple[type[_Record], ...] = (
+    Action,
+    PriceTier,
+    ModelProfile,
+    StepState,
+    Decision,
+    Outcome,
+)
