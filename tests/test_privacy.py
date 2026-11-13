@@ -237,7 +237,9 @@ def test_export_has_zero_personal_records(tmp_path: Path, scrub: bool, capsys: o
     recs = _read(out)
     assert len(recs) == 6
     ids = {r["data"]["decision_id"] for r in recs}  # type: ignore[index]
-    assert ids == {"r0", "r1", "r2"}
+    assert len(ids) == 3
+    if not scrub:
+        assert ids == {"r0", "r1", "r2"}
     for r in recs:
         if r["type"] == "decision":
             assert r["data"]["state"]["source"] == "replay"  # type: ignore[index]
@@ -337,7 +339,7 @@ def test_seeded_secret_corpus_removed_by_scrub(tmp_path: Path) -> None:
     assert isinstance(rt, Decision)
     assert rt.state.task_text is None
     assert rt.state.features == {"ok": 3, "flag": True, "none": None}
-    assert rt.decision_id == "r1"
+    assert rt.decision_id != "r1"
 
 
 def test_scrub_ids_consistent_and_salted() -> None:
@@ -347,7 +349,7 @@ def test_scrub_ids_consistent_and_salted() -> None:
     assert a.state.session_id == b.state.session_id != c.state.session_id
     assert a.state.task_id == b.state.task_id != a.state.session_id
     assert a.state.task_id is not None and len(a.state.task_id) == 16
-    assert a.decision_id == "1"
+    assert a.decision_id != "1" and len(a.decision_id) == 32
 
 
 def test_scrub_buckets_timestamps() -> None:
@@ -394,3 +396,55 @@ def test_default_patterns_have_unique_names() -> None:
 @pytest.mark.parametrize("name", ["DB_PASS" + "WORD", "AWS_SECRET_ACCESS_KEY", "my_api_key"])
 def test_assignment_pattern_matches_env_style_names(name: str) -> None:
     assert detect_sensitive(f"{name}={_chars(_ALNUM, 12)}", []).sensitive
+
+
+def test_scrubbed_export_still_joins_and_hides_session_in_decision_id(tmp_path: Path) -> None:
+    session = "sess-" + _chars(_ALNUM, 14)
+    store = TraceStore(tmp_path / "s")
+    for step in range(3):
+        did = f"{session}:{step}"
+        store.log_decision(_dec(did, _state(source="replay", session_id=session)))
+        store.log_outcome(Outcome(did, 2.0, True))
+    out = tmp_path / "o.jsonl"
+    export_replay(store, out, scrub=ScrubOptions("k"))
+    assert session.encode() not in out.read_bytes()
+    exported = TraceStore(tmp_path / "e")
+    (exported.path).mkdir()
+    (exported.path / "traces-2024-01-01.jsonl").write_bytes(out.read_bytes())
+    pairs = list(exported.joined())
+    assert len(pairs) == 3
+    assert all(o is not None for _, o in pairs)
+    assert len({d.decision_id for d, _ in pairs}) == 3
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/id_resolver.py",
+        "src/id_registry.py",
+        "src/environment.py",
+        "docs/keys.md",
+        "tests/test_secrets.py",
+        "src/secret_santa.py",
+        "app/envelope.py",
+        "src/monkey.py",
+        "docs/azure_notes.md",
+        "src/sshd_config_parser.py",
+        "README.md",
+    ],
+)
+def test_ordinary_paths_not_flagged(path: str) -> None:
+    assert not detect_sensitive(None, [path]).sensitive
+
+
+@pytest.mark.parametrize(
+    "path", ["home/u/.ssh_x/id_rsa", "id_ed25519", "k/id_ecdsa.pub", "k/id_dsa", "a/id_rsa_work"]
+)
+def test_real_key_file_names_flagged(path: str) -> None:
+    assert detect_sensitive(None, [path]).sensitive
+
+
+def test_salt_not_in_repr() -> None:
+    salt = "salt-" + _chars(_ALNUM, 12)
+    assert salt not in repr(PrivacyConfig(hash_text=True, salt=salt))
+    assert salt not in repr(ScrubOptions(salt=salt))

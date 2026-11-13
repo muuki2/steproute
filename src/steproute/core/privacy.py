@@ -65,7 +65,10 @@ DEFAULT_SENSITIVE_GLOBS: tuple[Rule, ...] = (
     Rule("keystore_p12", "**/*.p12"),
     Rule("keystore_pfx", "**/*.pfx"),
     Rule("ssh_dir", "**/.ssh/**"),
-    Rule("ssh_private_keys", "**/id_[re]*"),
+    Rule("ssh_key_rsa", "**/id_rsa*"),
+    Rule("ssh_key_ed25519", "**/id_ed25519*"),
+    Rule("ssh_key_ecdsa", "**/id_ecdsa*"),
+    Rule("ssh_key_dsa", "**/id_dsa*"),
     Rule("aws_dir", "**/.aws/**"),
     Rule("gcloud_dir", "**/.config/gcloud/**"),
     Rule("azure_dir", "**/.azure/**"),
@@ -105,7 +108,7 @@ class PrivacyConfig:
 
     capture_text: bool = False
     hash_text: bool = False
-    salt: str = ""
+    salt: str = field(default="", repr=False)
     sensitive_globs: tuple[Rule, ...] = DEFAULT_SENSITIVE_GLOBS
     secret_patterns: tuple[Rule, ...] = DEFAULT_SECRET_PATTERNS
     callback: SensitiveCallback | None = field(default=None, compare=False)
@@ -249,7 +252,7 @@ def redact_state(state: StepState, config: PrivacyConfig) -> StepState:
 class ScrubOptions:
     """Parameters of a scrubbed export."""
 
-    salt: str
+    salt: str = field(repr=False)
     bucket_seconds: float = 3600.0
     secret_patterns: tuple[Rule, ...] = DEFAULT_SECRET_PATTERNS
 
@@ -290,6 +293,11 @@ def _scrub_action(a: Action, opts: ScrubOptions) -> Action:
     )
 
 
+def _scrub_decision_id(decision_id: str, opts: ScrubOptions) -> str:
+    # Hashed too: a collector may have built the id from the session id.
+    return keyed_hash(opts.salt, "decision:" + decision_id, length=32)
+
+
 def scrub_decision(d: Decision, opts: ScrubOptions) -> Decision:
     """A scrubbed copy of ``d``; see ``docs/PRIVACY.md`` for exactly what changes."""
 
@@ -310,6 +318,7 @@ def scrub_decision(d: Decision, opts: ScrubOptions) -> Decision:
     )
     return dataclasses.replace(
         d,
+        decision_id=_scrub_decision_id(d.decision_id, opts),
         ts=_bucket(d.ts, opts.bucket_seconds),
         state=state,
         candidates=[_scrub_action(a, opts) for a in d.candidates],
@@ -322,6 +331,7 @@ def scrub_outcome(o: Outcome, opts: ScrubOptions) -> Outcome:
     """A scrubbed copy of ``o``."""
     return dataclasses.replace(
         o,
+        decision_id=_scrub_decision_id(o.decision_id, opts),
         ts=_bucket(o.ts, opts.bucket_seconds),
         signals=_scrub_free(o.signals, opts),
         final_model=None

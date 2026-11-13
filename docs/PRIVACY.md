@@ -43,7 +43,7 @@ by itself; collectors that know them call `mark_sensitive` first. This version o
 flag; routing that honours it is a separate issue.
 
 Default glob rules: `dotenv_files`, `dotenv_variants`, `dotenv_suffix`, `pem_files`,
-`key_files`, `keystore_p12`, `keystore_pfx`, `ssh_dir`, `ssh_private_keys`, `aws_dir`,
+`key_files`, `keystore_p12`, `keystore_pfx`, `ssh_dir`, `ssh_key_rsa`, `ssh_key_ed25519`, `ssh_key_ecdsa`, `ssh_key_dsa`, `aws_dir`,
 `gcloud_dir`, `azure_dir`, `kube_config`, `netrc`, `secrets_dir`.
 
 Default secret patterns: `aws_access_key_id`, `github_token`, `api_key_sk`, `slack_token`,
@@ -76,13 +76,17 @@ Scrubbing is applied to each exported record:
 - `task_text` is dropped.
 - `session_id` and `task_id` are replaced by HMAC-SHA256(salt, id) truncated to 16 hex
   characters. The mapping is consistent within one export, so records still group.
-  `decision_id` is kept: it is a random id needed to join outcomes.
+- `decision_id` (on decisions and outcomes) is replaced by a keyed hash under its own prefix
+  (32 hex characters), consistently, so outcomes still join to their decisions. It is hashed
+  because a collector may have built it from the session id.
 - Every `ts` is rounded down to the hour (configurable in `ScrubOptions.bucket_seconds`).
 - In `features` and `signals`, only booleans, numbers and null are kept. Every string, list
   and nested object is dropped, because those can carry arbitrary text.
 - The secret patterns are run over every remaining string (`harness`, `kind`, `policy`,
   `current_model`, tool names, model ids, dict keys) and each match is replaced with
   `[REDACTED]`.
+
+`PrivacyConfig.salt` and `ScrubOptions.salt` are excluded from `repr`, so logging a config does not leak them.
 
 The salt comes from `--salt`, else `STEPROUTE_SCRUB_SALT`, else a random one generated for
 that export. It is never printed or written to the output. Use the same salt across exports
@@ -95,4 +99,4 @@ Scrub removes the fields above. It is not a proof of anonymity. Strings that are
 (`harness`, `kind`, `policy`, tool names, model ids) are only checked against the secret
 patterns, so free text there that matches no pattern survives. Numeric values, step counts,
 token counts and hour-level timing remain and can in principle be used to re-identify a
-session. `decision_id` is kept. Check the output before you publish it.
+session. Check the output before you publish it.
