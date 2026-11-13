@@ -265,11 +265,15 @@ def normalise_usage(usage: Mapping[str, Any] | None, provider: str) -> AttemptUs
     Anthropic's cache reads and writes back in). So ``cache_read = cached_tokens``; for
     Anthropic ``cache_write = cache_creation_input_tokens`` (or
     ``prompt_tokens_details.cache_creation_tokens``); otherwise 0; and ``input`` is the
-    rest. ``None`` when the response carried no usage.
+    rest. ``None`` when the response carried no usage, or a prompt of 0 tokens: LiteLLM 1.109.1
+    fills in all-zero usage when the provider sent none, and no real request has an empty
+    prompt, so zeros mean "not reported", never "free".
     """
     if not isinstance(usage, Mapping) or "prompt_tokens" not in usage:
         return None
     prompt = _int(usage.get("prompt_tokens"))
+    if prompt <= 0:
+        return None
     details = usage.get("prompt_tokens_details")
     details = details if isinstance(details, Mapping) else {}
     read = _int(details.get("cached_tokens"))

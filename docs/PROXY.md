@@ -45,6 +45,7 @@ port = 8788
 mode = "route"              # "route" applies decisions; "shadow" decides and logs only
 harness = "proxy"           # StepState.harness
 on_upstream_error = "client_model"   # or "error"
+# on_no_decision = "client_model"    # or "error": refuse (503) instead of failing open
 # extra_params = ["some_vendor_field"]  # forward more request fields (api_base etc. never)
 
 [session]
@@ -187,7 +188,9 @@ A stream is forwarded with chunked transfer encoding. Each chunk LiteLLM yields 
 - `InProcessSource` wraps a `Service` built from a `steproute serve` config. It has the same policy, time budget, fail-open, labelling and store, with no extra hop. This is the default.
 - `HttpSource` calls a running `steproute serve` (`/decide` with a 250 ms client timeout, and `/report`).
 
-Any failure (unreachable, timeout, non-200, a 503 from the service, a bad body) is a `SourceError`, and the proxy **fails open**: it runs the client's own request unchanged. The privacy rule overrides this. A sensitive request whose client model is not on a local upstream goes to `[privacy] local_fallback`. Without one it is refused with HTTP 503 `steproute_sensitive` and sent nowhere. Nothing is logged for a request with no decision, because there is no decision to join; it is counted in `/healthz`.
+Any failure (unreachable, timeout, non-200, a 503 from the service, a bad body) is a `SourceError`, and the proxy **fails open**: it runs the client's own request unchanged. The privacy rule overrides this. A sensitive request whose client model is not on a local upstream goes to `[privacy] local_fallback`. Without one it is refused with HTTP 503 `steproute_sensitive` and sent nowhere. Nothing is logged for a request with no decision, because there is no decision to join; it is counted in `/healthz`. With `[proxy] on_no_decision = "error"` the proxy does not fail open at all: a request without a decision is refused with HTTP 503 `steproute_no_decision` and sent nowhere. The replay runner sets it, so nothing runs that the fixed policy did not choose.
+
+A response that carried no usage (LiteLLM 1.109.1 then fills in all-zero counts, and a zero-token prompt is treated the same way) gives the outcome `cost_usd = null` and the signal `usage_missing = true`; the service does not price the empty counts as $0.
 
 *Rejected:* HTTP only, which costs a hop and a second process for the common single-machine case; and in-process only, which prevents several collectors from sharing one policy and store.
 

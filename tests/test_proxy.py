@@ -525,6 +525,25 @@ def test_non_sensitive_source_failure_fails_open_to_the_client_model(tmp_path: P
         assert h.proxy.counters["source_failures"] == 1
 
 
+def test_on_no_decision_error_refuses_instead_of_failing_open(tmp_path: Path) -> None:
+    for h in start(tmp_path, source=BrokenSource(), on_no_decision="error"):
+        r = h.post(chat("claude-haiku-5-5"))
+        assert r.status == 503 and r.body["error"]["type"] == "steproute_no_decision"
+        assert h.cloud.received == [] and h.local.received == []
+
+
+def test_a_response_without_usage_is_unknown_cost_not_zero(h: Harness) -> None:
+    """LiteLLM fills in all-zero usage when the provider sends none; the proxy must record the
+    cost as unknown (and say so), and the service must not price the zeros as $0."""
+    h.cloud.set_default(Reply(usage=False))
+    r = h.post(chat("claude-haiku-5-5"))
+    assert r.status == 200
+    h.finished()
+    (outcome,) = h.outcomes()
+    assert outcome.cost_usd is None
+    assert outcome.signals.get("usage_missing") is True
+
+
 # --- decisions over HTTP --------------------------------------------------------------------
 
 
