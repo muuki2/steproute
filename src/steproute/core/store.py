@@ -6,6 +6,7 @@ Layout: ``path`` is a directory holding one file per UTC day of the write time,
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import time
@@ -16,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from steproute.core.privacy import PrivacyConfig, redact_state
 from steproute.core.schema import SCHEMA_VERSION, Decision, Outcome
 
 try:  # pragma: no cover - platform dependent
@@ -23,13 +25,19 @@ try:  # pragma: no cover - platform dependent
 except ImportError:  # pragma: no cover
     fcntl = None  # type: ignore[assignment]
 
-__all__ = ["CorruptLineWarning", "StoreStats", "TraceStore", "compute_stats"]
+__all__ = ["CorruptLineWarning", "StoreStats", "TraceStore", "compute_stats", "encode_line"]
 
 Record = Decision | Outcome
 
 
 class CorruptLineWarning(UserWarning):
     """A trace line was unreadable or not a valid record; it was skipped."""
+
+
+def encode_line(kind: str, data: dict[str, Any]) -> bytes:
+    """One store line (with trailing newline) for a record dict."""
+    text = json.dumps({"type": kind, "v": SCHEMA_VERSION, "data": data}, separators=(",", ":"))
+    return text.encode("utf-8") + b"\n"
 
 
 def _day_name(ts: float) -> str:
@@ -40,9 +48,14 @@ class TraceStore:
     """Append-only store of decisions and outcomes under a directory."""
 
     def __init__(
-        self, path: str | os.PathLike[str], clock: Callable[[], float] = time.time
+        self,
+        path: str | os.PathLike[str],
+        clock: Callable[[], float] = time.time,
+        privacy: PrivacyConfig | None = None,
     ) -> None:
         self.path = Path(path)
+        #: Applied to every decision on the write path (default: text is not captured).
+        self.privacy = privacy or PrivacyConfig()
         self._clock = clock
         #: Number of lines skipped by the most recent completed read.
         self.skipped_lines = 0
@@ -50,14 +63,14 @@ class TraceStore:
     # --- writing ---
 
     def log_decision(self, decision: Decision) -> None:
-        self._append("decision", decision.to_dict())
+        safe = dataclasses.replace(decision, state=redact_state(decision.state, self.privacy))
+        self._append("decision", safe.to_dict())
 
     def log_outcome(self, outcome: Outcome) -> None:
         self._append("outcome", outcome.to_dict())
 
     def _append(self, kind: str, data: dict[str, Any]) -> None:
-        text = json.dumps({"type": kind, "v": SCHEMA_VERSION, "data": data}, separators=(",", ":"))
-        line = text.encode("utf-8") + b"\n"
+        line = encode_line(kind, data)
         self.path.mkdir(parents=True, exist_ok=True)
         target = self.path / _day_name(self._clock())
         fd = os.open(target, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
