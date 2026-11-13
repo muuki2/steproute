@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     _add_traces(sub)
     _add_catalog(sub)
+    _add_serve(sub)
     return parser
 
 
@@ -70,6 +71,39 @@ def _add_catalog(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     )
     check.add_argument("--timeout", type=float, default=120.0, help="seconds per request")
     check.set_defaults(func=_catalog_check)
+
+
+def _add_serve(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``serve`` command: the local HTTP routing service."""
+    serve = sub.add_parser("serve", help="Run the local routing service (HTTP API).")
+    serve.add_argument("--config", type=Path, help="service config TOML (default: all defaults)")
+    serve.add_argument("--host", help="bind address (default 127.0.0.1)")
+    serve.add_argument("--port", type=int, help="port; 0 picks a free one and prints it")
+    serve.add_argument("--store", type=Path, help="trace store directory")
+    serve.set_defaults(func=_serve)
+
+
+def _serve(args: argparse.Namespace) -> int:
+    import dataclasses
+    import logging
+
+    from steproute.core.service import ServiceConfigError, load_service_config, serve
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    try:
+        config = load_service_config(args.config)
+        overrides = {
+            k: v
+            for k, v in (("host", args.host), ("port", args.port), ("store_path", args.store))
+            if v is not None
+        }
+        config = dataclasses.replace(config, **overrides)
+        return serve(config)
+    except (ServiceConfigError, OSError) as exc:
+        print(f"steproute: {exc}", file=sys.stderr)
+        return 2
 
 
 def _load(path: Path | None) -> Catalog | None:
