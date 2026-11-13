@@ -1,0 +1,424 @@
+{
+  "messages": [
+    {
+      "dir": "out",
+      "message": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {
+          "capabilities": {},
+          "clientInfo": {
+            "name": "mcp",
+            "version": "0.1.0"
+          },
+          "protocolVersion": "2025-11-25"
+        }
+      }
+    },
+    {
+      "dir": "in",
+      "message": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": {
+          "capabilities": {
+            "prompts": {
+              "listChanged": false
+            },
+            "resources": {
+              "listChanged": false,
+              "subscribe": false
+            },
+            "tools": {
+              "listChanged": false
+            }
+          },
+          "instructions": "steproute recommends a model and effort per task. It only advises: apply its recommendations yourself. Call route_task before spawning a subagent or starting a task, and report_outcome when it finishes.",
+          "protocolVersion": "2025-11-25",
+          "serverInfo": {
+            "name": "steproute",
+            "version": "0.0.1"
+          }
+        }
+      }
+    },
+    {
+      "dir": "out",
+      "message": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      }
+    },
+    {
+      "dir": "out",
+      "message": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "method": "tools/list"
+      }
+    },
+    {
+      "dir": "in",
+      "message": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "tools": [
+            {
+              "description": "Ask the steproute router which model and reasoning effort to use for a task. Call this BEFORE you spawn a subagent or start a new task (a new subtask, a plan, a large edit), and use the answer to pick the subagent's model and effort. This tool only ADVISES: it cannot change your model or any setting. You must apply the recommendation yourself, for example by choosing the model when you spawn a subagent. If it says the task is sensitive, use only a local model for it. If it returns no recommendation, use your own default model (or keep the work local when it says the task is sensitive). The result includes a decision_id: keep it, and call report_outcome with it when the task is finished.\n\nArguments: description is a short summary of the task (it is checked for secrets and is not stored by default); kind is \"main\", \"subagent\", \"plan\" or \"tool_followup\" (use \"subagent\" when you are about to spawn one); tools lists the names of the tools the task will use; est_size is the estimated prompt size in tokens (an integer), or one of the words \"small\", \"medium\", \"large\" if you cannot estimate it.",
+              "inputSchema": {
+                "properties": {
+                  "description": {
+                    "title": "Description",
+                    "type": "string"
+                  },
+                  "est_size": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "title": "Est Size"
+                  },
+                  "kind": {
+                    "default": "main",
+                    "title": "Kind",
+                    "type": "string"
+                  },
+                  "tools": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "title": "Tools"
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "title": "route_taskArguments",
+                "type": "object"
+              },
+              "name": "route_task",
+              "outputSchema": {
+                "additionalProperties": true,
+                "title": "route_taskDictOutput",
+                "type": "object"
+              }
+            },
+            {
+              "description": "Tell the steproute router how a task went, using the decision_id that route_task returned. ALWAYS call this once the task you asked about has finished, whether it worked or not: honest results, including failures, are how the router learns which model suits which task. success is true, false, or null if you cannot tell. signals is an optional object of facts you observed, such as tests_passed (bool), schema_valid (bool), tool_error (bool), compile_error (bool), user_rejected (bool), user_rewrote (bool), user_approved (bool), retried (bool), retry_count (int), judge_score (0 to 1); unknown keys are kept. This tool only records the result; it does not change any model. An unknown decision_id is reported back as not found and nothing is stored. A decision you never report is closed as unknown after a timeout.",
+              "inputSchema": {
+                "properties": {
+                  "decision_id": {
+                    "title": "Decision Id",
+                    "type": "string"
+                  },
+                  "signals": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "title": "Signals"
+                  },
+                  "success": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "title": "Success"
+                  }
+                },
+                "required": [
+                  "decision_id"
+                ],
+                "title": "report_outcomeArguments",
+                "type": "object"
+              },
+              "name": "report_outcome",
+              "outputSchema": {
+                "additionalProperties": true,
+                "title": "report_outcomeDictOutput",
+                "type": "object"
+              }
+            },
+            {
+              "description": "List the models steproute can recommend, with provider, tier (higher means more capable and more expensive), supported effort levels and whether each runs locally. Call it when you want to know which models a route_task answer can name. It is read-only and only informs you: steproute cannot change your model, you apply recommendations yourself.",
+              "inputSchema": {
+                "properties": {},
+                "title": "list_modelsArguments",
+                "type": "object"
+              },
+              "name": "list_models",
+              "outputSchema": {
+                "additionalProperties": true,
+                "title": "list_modelsDictOutput",
+                "type": "object"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "out",
+      "message": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "arguments": {},
+          "name": "list_models"
+        }
+      }
+    },
+    {
+      "dir": "in",
+      "message": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{\n  \"models\": [\n    {\n      \"id\": \"qwen3.5:9b\",\n      \"provider\": \"ollama\",\n      \"tier\": 1,\n      \"efforts\": [\n        \"none\",\n        \"medium\"\n      ],\n      \"local\": true\n    },\n    {\n      \"id\": \"gpt-oss:20b\",\n      \"provider\": \"ollama\",\n      \"tier\": 2,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"local\": true\n    },\n    {\n      \"id\": \"qwen3-coder:30b\",\n      \"provider\": \"ollama\",\n      \"tier\": 3,\n      \"efforts\": [\n        \"medium\"\n      ],\n      \"local\": true\n    },\n    {\n      \"id\": \"claude-haiku-5-5\",\n      \"provider\": \"anthropic\",\n      \"tier\": 4,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\",\n        \"xhigh\",\n        \"max\"\n      ],\n      \"local\": false\n    },\n    {\n      \"id\": \"deepseek-flash\",\n      \"provider\": \"deepseek\",\n      \"tier\": 4,\n      \"efforts\": [\n        \"none\",\n        \"low\",\n        \"high\",\n        \"max\"\n      ],\n      \"local\": false\n    },\n    {\n      \"id\": \"claude-sonnet-5-5\",\n      \"provider\": \"anthropic\",\n      \"tier\": 5,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\",\n        \"xhigh\",\n        \"max\"\n      ],\n      \"local\": false\n    },\n    {\n      \"id\": \"deepseek-v4-pro\",\n      \"provider\": \"deepseek\",\n      \"tier\": 5,\n      \"efforts\": [\n        \"none\",\n        \"low\",\n        \"high\",\n        \"max\"\n      ],\n      \"local\": false\n    },\n    {\n      \"id\": \"claude-opus-5-5\",\n      \"provider\": \"anthropic\",\n      \"tier\": 6,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\",\n        \"xhigh\",\n        \"max\"\n      ],\n      \"local\": false\n    },\n    {\n      \"id\": \"claude-fable-5-2\",\n      \"provider\": \"anthropic\",\n      \"tier\": 7,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\",\n        \"xhigh\",\n        \"max\"\n      ],\n      \"local\": false\n    }\n  ]\n}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "models": [
+              {
+                "efforts": [
+                  "none",
+                  "medium"
+                ],
+                "id": "qwen3.5:9b",
+                "local": true,
+                "provider": "ollama",
+                "tier": 1
+              },
+              {
+                "efforts": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "id": "gpt-oss:20b",
+                "local": true,
+                "provider": "ollama",
+                "tier": 2
+              },
+              {
+                "efforts": [
+                  "medium"
+                ],
+                "id": "qwen3-coder:30b",
+                "local": true,
+                "provider": "ollama",
+                "tier": 3
+              },
+              {
+                "efforts": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "id": "claude-haiku-5-5",
+                "local": false,
+                "provider": "anthropic",
+                "tier": 4
+              },
+              {
+                "efforts": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ],
+                "id": "deepseek-flash",
+                "local": false,
+                "provider": "deepseek",
+                "tier": 4
+              },
+              {
+                "efforts": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "id": "claude-sonnet-5-5",
+                "local": false,
+                "provider": "anthropic",
+                "tier": 5
+              },
+              {
+                "efforts": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ],
+                "id": "deepseek-v4-pro",
+                "local": false,
+                "provider": "deepseek",
+                "tier": 5
+              },
+              {
+                "efforts": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "id": "claude-opus-5-5",
+                "local": false,
+                "provider": "anthropic",
+                "tier": 6
+              },
+              {
+                "efforts": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "id": "claude-fable-5-2",
+                "local": false,
+                "provider": "anthropic",
+                "tier": 7
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dir": "out",
+      "message": {
+        "id": 4,
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "arguments": {
+            "description": "Read the repo and summarise the test layout",
+            "est_size": "small",
+            "kind": "subagent",
+            "tools": [
+              "Read",
+              "Grep"
+            ]
+          },
+          "name": "route_task"
+        }
+      }
+    },
+    {
+      "dir": "in",
+      "message": {
+        "id": 4,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{\n  \"recommendation\": true,\n  \"decision_id\": \"6a6e7cb5beef421e8c82b25843c2daa5\",\n  \"model\": \"claude-haiku-5-5\",\n  \"effort\": \"low\",\n  \"local\": false,\n  \"cascade\": [\n    {\n      \"model\": \"claude-haiku-5-5\",\n      \"effort\": \"medium\"\n    },\n    {\n      \"model\": \"claude-sonnet-5-5\",\n      \"effort\": \"low\"\n    }\n  ],\n  \"reason\": \"Read-only subagent work, so a cheaper tier (4).\",\n  \"sensitive\": false,\n  \"note\": \"Advice only: apply it yourself, then call report_outcome with the decision_id when the task is finished.\"\n}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "cascade": [
+              {
+                "effort": "medium",
+                "model": "claude-haiku-5-5"
+              },
+              {
+                "effort": "low",
+                "model": "claude-sonnet-5-5"
+              }
+            ],
+            "decision_id": "6a6e7cb5beef421e8c82b25843c2daa5",
+            "effort": "low",
+            "local": false,
+            "model": "claude-haiku-5-5",
+            "note": "Advice only: apply it yourself, then call report_outcome with the decision_id when the task is finished.",
+            "reason": "Read-only subagent work, so a cheaper tier (4).",
+            "recommendation": true,
+            "sensitive": false
+          }
+        }
+      }
+    },
+    {
+      "dir": "out",
+      "message": {
+        "id": 5,
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "arguments": {
+            "decision_id": "6a6e7cb5beef421e8c82b25843c2daa5",
+            "signals": {
+              "tests_passed": true
+            },
+            "success": true
+          },
+          "name": "report_outcome"
+        }
+      }
+    },
+    {
+      "dir": "in",
+      "message": {
+        "id": 5,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{\n  \"recorded\": true,\n  \"found\": true,\n  \"success\": true\n}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "found": true,
+            "recorded": true,
+            "success": true
+          }
+        }
+      }
+    }
+  ]
+}

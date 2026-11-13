@@ -1,0 +1,469 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "steproute trace records",
+  "description": "Trace schema version 0.1. Generated; do not edit by hand.",
+  "$defs": {
+    "Action": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "escalate_to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "model"
+      ]
+    },
+    "PriceTier": {
+      "type": "object",
+      "properties": {
+        "above_tokens": {
+          "type": "integer"
+        },
+        "price_in": {
+          "type": "number"
+        },
+        "price_out": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "above_tokens",
+        "price_in",
+        "price_out"
+      ]
+    },
+    "ModelProfile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "price_in": {
+          "type": "number"
+        },
+        "price_out": {
+          "type": "number"
+        },
+        "context_window": {
+          "type": "integer"
+        },
+        "local": {
+          "type": "boolean"
+        },
+        "cache_write_mult": {
+          "type": "number"
+        },
+        "cache_read_mult": {
+          "type": "number"
+        },
+        "efforts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "effort_output_mult": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "tier": {
+          "type": "integer"
+        },
+        "tools": {
+          "type": "boolean"
+        },
+        "holdout": {
+          "type": "boolean"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "price_tiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PriceTier"
+          }
+        },
+        "effort_map": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "effort_change_keeps_cache": {
+          "type": "boolean"
+        },
+        "cache_min_tokens": {
+          "type": "integer"
+        },
+        "latency_base_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms_per_input_token": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms_per_output_token": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_switch_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "price_in",
+        "price_out",
+        "context_window"
+      ]
+    },
+    "StepState": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "step_idx": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cached_prefix_tokens": {
+          "type": "integer"
+        },
+        "current_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "enum": [
+            null,
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "failed_attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sensitive": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "replay",
+            "personal"
+          ]
+        },
+        "task_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "harness",
+        "session_id",
+        "step_idx",
+        "kind",
+        "prompt_tokens"
+      ]
+    },
+    "CandidateSet": {
+      "type": "object",
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "max_depth": {
+          "type": "integer"
+        },
+        "include_holdout": {
+          "type": "boolean"
+        },
+        "allow": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "fingerprint",
+        "count",
+        "max_depth"
+      ]
+    },
+    "Decision": {
+      "type": "object",
+      "properties": {
+        "decision_id": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "number"
+        },
+        "state": {
+          "$ref": "#/$defs/StepState"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "propensity": {
+          "type": "number"
+        },
+        "predicted_success": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "predicted_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidate_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CandidateSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "decision_id",
+        "ts",
+        "state",
+        "candidates",
+        "action",
+        "policy",
+        "propensity"
+      ]
+    },
+    "Outcome": {
+      "type": "object",
+      "properties": {
+        "decision_id": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "number"
+        },
+        "success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signals": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "final_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalated": {
+          "type": "boolean"
+        },
+        "input_tokens": {
+          "type": "integer"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "cache_read_tokens": {
+          "type": "integer"
+        },
+        "cache_write_tokens": {
+          "type": "integer"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "decision_id",
+        "ts",
+        "success"
+      ]
+    }
+  }
+}

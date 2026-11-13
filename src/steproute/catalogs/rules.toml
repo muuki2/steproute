@@ -1,0 +1,44 @@
+# steproute default rule-baseline configuration. Reference: docs/RULES.md.
+#
+# This is a hand-written starting point, NOT a measured optimum. Tiers are the catalog's
+# `tier` numbers; with the default catalog tier 5 is the mid tier (claude-sonnet-5-5,
+# deepseek-v4-pro) and tier 4 is the cheap tier (claude-haiku-5-5, deepseek-flash).
+# Unknown keys are an error.
+
+[default]
+tier = 5
+effort = "medium"
+
+[cheap]
+tier = 4
+effort = "low"
+# `kind` values that count as subagent work (case-insensitive).
+subagent_kinds = ["subagent"]
+# A subagent step gets the cheap rule only if it lists at least one tool and every tool
+# is in this list (case-insensitive). Any other tool, or no tools, gives the default rule.
+read_only_tools = [
+  "search", "read", "grep", "glob", "ls", "list", "find", "cat",
+  "websearch", "webfetch", "notebookread",
+  "test", "tests", "run_tests", "test_run", "pytest",
+]
+
+[stay]
+# Keep current_model when it is feasible and already in the tier the rule asks for.
+enabled = true
+# While staying, keep state.current_effort (if set and supported) instead of the rule's effort.
+# Changing effort on the same model loses the cache unless the profile says otherwise.
+keep_effort = true
+
+[cascade]
+enabled = true
+# Rung: the same model one supported effort level above the first step.
+effort_up = true
+# Rung: the next higher tier's preferred model at this effort (nearest supported one).
+next_tier = true
+next_tier_effort = "low"
+
+[models]
+# Among models sharing a tier: the model already in use first, then this provider order
+# (providers not listed come last), then catalog order.
+prefer_current = true
+provider_order = ["anthropic", "deepseek", "ollama"]

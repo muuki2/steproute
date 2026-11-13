@@ -39,7 +39,7 @@ pipeline() {
   local py dist
   for py in $pythons; do
     step "python $py: install from uv.lock"
-    UV_PROJECT_ENVIRONMENT=".ci/py$py" uv sync --locked --extra dev --python "$py" --quiet
+    UV_PROJECT_ENVIRONMENT=".ci/py$py" uv sync --locked --extra dev --extra proxy --extra mcp --python "$py" --quiet
   done
 
   step "ruff"
@@ -58,6 +58,9 @@ pipeline() {
   uv build --quiet --out-dir "$dist"
   (cd "$dist" && uv run --isolated --no-project --python "$first" \
     --with ./steproute-*.whl steproute --version)
+  (cd "$dist" && uv run --isolated --no-project --python "$first" \
+    --with ./steproute-*.whl python -c \
+    "from steproute.core import load_rule_config, RuleConfig; assert load_rule_config() == RuleConfig()")
   rm -rf "$dist"
 }
 
