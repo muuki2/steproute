@@ -11,7 +11,7 @@ Rules for this file:
 - Every claim has a source someone can open: a docs URL, or a file path at a named commit or tag.
 - A section leads with the answer, then gives evidence, then a confidence note saying what the confidence rests on.
 - "Could not determine" is a valid answer. It must list what was tried.
-- Source was read, never built, installed or run. Line numbers are at the pinned commit given in each section.
+- Source was read, never built, installed or run. Line numbers are at the pinned commit given in each section. The exception is section 14 (issue 56), which installed and ran the SWE-bench harness, the task images and Ollama on the real machine, and says so.
 
 ## Pinned versions
 
@@ -26,6 +26,7 @@ Rules for this file:
 | RouteLLM | `lm-sys/RouteLLM` HEAD; PyPI `routellm` 0.2.0 | `0b64fdafe049e596a3f5657c219329f24af24198` | 2024-08-10 |
 | Ollama (source read for cache behaviour) | `v0.40.16` | `d63b702609c4300a2ca07be2bdb0adb9834725e5` | 2026-11-07 |
 | mini-SWE-agent (source read; not a dependency) | `2.4.6` (PyPI wheel, sha256 `a35463c5…cd54`) | n/a (wheel) | 2026-07-23 |
+| SWE-bench harness (installed and run, issue 56) | `swebench==5.0.2` (PyPI), every dependency pinned in `scripts/swebench-requirements.txt`, project-local env by `scripts/install_swebench.sh` | n/a (PyPI) | 2026-08-18 |
 | Claude Code | docs only; version gates quoted per feature (mods need v2.1.287+) | n/a | docs read 2026-11-13 |
 
 ## Summary
@@ -1025,6 +1026,8 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 - **High** for the image counts: listed directly.
 - **Low** for whether the April 2025 official arm64 images and Epoch's untested builds grade like the x86_64 images with the August 2026 `eval_script`. Nothing was run.
 
+*Tested on 13 Nov 2026 (issue 56, section 14):* the harness 5.0.2 runs on this Mac against the arm64 image named in a one-row dataset, as described above; the per-instance report is under `logs/run_evaluation/` (5.0.x layout); the empty patch is indeed skipped without a container. For the 20 pilot tasks, 19 images grade correctly with the August 2026 `eval_script` (gold passes, a no-change patch fails), including all 5 Epoch images; `psf__requests-1921` fails even with the gold patch.
+
 ## 11. Issue 18: mini-SWE-agent as the replay scaffold, and two proxy findings
 
 *Added by issue 18, checked 2026-11-13.* mini-SWE-agent was read from the PyPI wheel `mini_swe_agent-2.4.6-py3-none-any.whl` (uploaded 2026-07-23; sha256 `a35463c553ac825c7773b03cfa69cd44958e3af20155dcc5711fdf9e4c67cd54`), unpacked into a scratch directory and never installed or run. Line references are to files in that wheel. The two proxy findings were reproduced against the loopback mock with the pinned `litellm==1.109.1`. No provider was called.
@@ -1054,6 +1057,8 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 - **High** for what mini-SWE-agent 2.4.6 does: source read from the published wheel.
 - **High** for the two proxy findings: reproduced and covered by tests.
 - **Not verified:** how the shorter task message of our loop changes model behaviour; the pilot measures steps and cost directly.
+
+*Tested on 13 Nov 2026 (issue 56, section 14):* the loop ran three times on `qwen3.5:9b` through the proxy to Ollama's `/v1`, with commands in the real task container: one run solved its task (graded `passed` by the harness), one hit the step limit, one hit the 32K cap. Structured tool calls arrived on every step; the model never needed the text fallback.
 
 
 ## 12. Issue 14: the Claude Code mod, checked against the docs and in real sessions
@@ -1258,3 +1263,81 @@ The plugin is loaded through dsh's own loading path: a `- insert:` row in the `-
 - `cacheWriteTokens` from the DeepSeek adapter, and the cache effect of an effort change on DeepSeek, were not observed.
 
 **Confidence.** High for the seam names, signatures, event payloads and the ordering facts above: they were read in the tarball sources, exercised in the in-process sessions, and seen again in dsh's own session log in the CLI sessions. High for the headless CLI path with the `--patch` overlay (five sessions). Medium for loading as a bundle through `dsh plugin add`, and for other profiles, which were read, not run.
+
+## 14. Issue 56: the replay path on real infrastructure (harness, images, Docker, Ollama)
+
+*Added by issue 56, run on 13-14 Nov 2026 on the maintainer's M4 Pro.* Unlike every section above, this one installed and ran things: Docker Desktop 28.0.4 (server arm64, 14 CPUs, a VM of about 8 GB), Ollama 0.40.16 started with `OLLAMA_CONTEXT_LENGTH=32768 OLLAMA_MAX_LOADED_MODELS=1`, the SWE-bench harness `swebench==5.0.2` in a project-local environment, and the 20 pilot images. **No paid provider was called by any route**: no key was set in the environment of any command, every plan that ran contained only `ollama` configurations (checked with a dry run first), and every run's `ledger.jsonl` is empty.
+
+**Answer.**
+
+- **The harness works on Apple Silicon**, with native arm64 images, one instance at a time, through `SwebenchBackend` exactly as section 10 describes (a one-row dataset whose `image` is the arm64 one). Installed by `scripts/install_swebench.sh`: Python 3.12 venv at `.cache/steproute/swebench-env`, `swebench==5.0.2` and 79 dependencies at the exact versions in `scripts/swebench-requirements.txt` (`uv pip compile` for `aarch64-apple-darwin`). `steproute tasks check` and the replay config now find it, and the fetched rows, from the project root.
+- **19 of the 20 pilot images grade correctly; `psf__requests-1921` does not** (the gold patch fails). The table is in `docs/TASKSET.md` section 8.1. All 5 Epoch images ("not tested" by their authors) grade correctly.
+- **An empty patch proves nothing about an image**: the harness skips it without starting a container. Validation needs a patch that changes no code but is not empty; `--patch baseline` adds one inert file.
+- **GHCR pulls fail through Docker Desktop on this Mac** with `403 Forbidden` on `https://ghcr.io/token?scope=repository:epoch-research/...:pull`, also with an empty `DOCKER_CONFIG`; an anonymous token request with `curl` returns 200 and the manifests are readable. Docker Desktop routes pulls through its own proxy (`docker info`: `HTTP Proxy: http.docker.internal:3128`) and presents the `ghcr.io` login it has stored, which these public repositories refuse. `scripts/fetch_ghcr_image.py` fetches anonymously and `docker load`s; the stored login was left alone.
+- **`DockerWorkspace` behaves as documented**, checked inside the container: a fixed environment and no network.
+- **The proxy talks to Ollama's `/v1`, and the local models make structured tool calls.** Ollama's `/v1` reports cached prompt tokens, so the trace store records Ollama prefix-cache reads (unlike LiteLLM's `ollama` provider, summary row 4).
+- **Ollama answered one HTTP 500** in 135 agent calls. The runner's call retry handled it, but the proxy then labelled the failed step `success = false` (fixed, below).
+
+**Evidence: the harness and images.**
+
+- `steproute tasks fetch`: the first attempt got `HTTP Error 502: Bad Gateway` from `datasets-server.huggingface.co`, the second wrote 500 rows (9.4 MB). `https://huggingface.co/api/datasets/SWE-bench/SWE-bench_Verified` reported sha `78f471bf655a3137b2e8a75af1501690ec009ec3`, the manifest's pin.
+- Run log of `pallets__flask-5014` with the gold patch (`--keep`): `eval.sh` activates the `testbed` conda environment, runs `python -m pip install -e .`, checks out the test files at the base commit and applies the test patch; `report.json` says `resolved: true`, FAIL_TO_PASS 1/1, PASS_TO_PASS 59/59; about 15 s of the 20 s is "Attempting to stop container" until "stopped successfully".
+- `psf__requests-1921`, gold: FAIL_TO_PASS 6/6, PASS_TO_PASS 104/107. `test_output.txt`: `platform linux -- Python 3.9.21, pytest-8.3.4`; `test_POSTBIN_GET_POST_FILES_WITH_DATA` fails with `TypeError: 'requests.post(url, data=...)' object (type: <class 'str'>) must be callable` (the string form of `pytest.raises`, gone since pytest 5); `test_mixed_case_scheme_acceptable` and `test_pyopenssl_redirect` fail with `requests.exceptions.SSLError: [SSL: CERTIFICATE_VERIFY_FAILED]` against `https://httpbin.org`. The baseline passes 5 of 6 FAIL_TO_PASS tests (network tests that pass either way).
+- `django__django-11728` (Epoch), baseline: FAIL_TO_PASS 1/2 (`test_app_not_found` passes), PASS_TO_PASS 43/44 (`test_builtin_fields` fails). Gold: 2/2 and 44/44.
+- Sizes and times: compressed 0.72-1.15 GB per image (`docker image inspect`), 19.1 GB for the 20; `docker system df` grew from 37.55 GB to 52.51 GB of images (15.0 GB). Official pulls took 105-478 s each and Epoch fetches 211-673 s, while the Ollama models downloaded on the same line. One check took 18-85 s.
+
+**Evidence: the task container** (`DockerWorkspace` on `swebench/sweb.eval.arm64.pallets_1776_flask-5014`):
+
+- Started in 0.3 s. `env | sort` printed `BASH_ENV`, the image's conda variables (`CONDA_DEFAULT_ENV=testbed`, `CONDA_PREFIX`, ...), `HOME=/root`, `HOSTNAME`, `TZ=Etc/UTC`, `PATH` (the testbed's), and the runner's fixed set (`LANG`, `LC_ALL`, `PAGER`, `MANPAGER`, `GIT_PAGER`, `PIP_PROGRESS_BAR`, `TQDM_DISABLE`, `PYTHONDONTWRITEBYTECODE`). No host variable, no key.
+- Network: `urllib.request.urlopen("https://pypi.org")` raised `URLError: [Errno -3] Temporary failure in name resolution`; `getent hosts pypi.org` found nothing; `/proc/net/dev` lists `lo` and kernel tunnel stubs only, no `eth0`.
+- `git log`: the runner's `base` commit on top of the image's `SWE-bench` commit and the task's base commit; after `echo hello > newfile.txt`, `git diff` showed exactly that file. `docker ps` was empty after `close()` and after every run.
+
+**Evidence: tool calls** (`steproute catalog check --model <id>` against `http://localhost:11434/v1`):
+
+| Model | Result | Time (cold load included) |
+|---|---|---|
+| `qwen3.5:9b` | PASS: `get_weather({"city": "Paris"})` | 7.9 s (runner `mlx`, context 32768 per `ollama ps`) |
+| `gpt-oss:20b` | PASS: `get_weather({"city": "Paris"})` | 7.3 s (runner `llamacpp`) |
+| `qwen3-coder:30b` | PASS: `get_weather({"city": "Paris"})` | 8.5 s |
+| `devstral:24b` | PASS: `get_weather({"city": "Paris"})` | 15.9 s (runner `llamacpp`) |
+
+A final `steproute catalog check` (the catalog's default selection: all four local models) printed PASS for each. No model needed `tools = false`; the catalog is unchanged.
+
+**Evidence: three end-to-end runs** (`steproute replay run --plan <file> --config <file> --execute`, plan files with one block, `configs = [["qwen3.5:9b", "none"]]`; config `max_retries = 0`, `run_timeout_s = 1200`, `[environment] kind = "docker"`, no `[check]`; the dry run listed only `ollama ... free (local)` and no keys):
+
+| Run | Task | Step limit | Result | Steps | Wall time | Prompt tokens (first / last) | Output tokens | Cached share |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `pallets__flask-5014` | 40 | `step_limit` (the fix was in the workspace, not yet submitted) | 40 | 138 s | 815 / 16,667 | 5,087 | 96% |
+| 2 | `pallets__flask-5014` | 100 | `passed` (harness: resolved) | 40 | 149 s | 814 / 17,565 | 3,599 | 96% |
+| 3 | `pytest-dev__pytest-5787` (estimated "long") | 250 | `context_limit` ("prompt of about 31723 tokens passes the local cap") | 54 | 232 s | 1,670 / 30,657 | 6,643 | 97% |
+
+- Every run wrote `grid.jsonl` (one run line, `meta.status` as above, `cost_usd = 0.0`), `runs.jsonl` (start and end), `plan.json`, `runs/<id>/result.json`, `trajectory.json`, `workspace.diff` (and `patch.diff`, `check.json` for run 2), and `traces/`: 40, 41 and 54 decisions, all joined (`steproute traces stats`: join rate 100%), every decision `source = "replay"`, policy `replay-fixed`, action `qwen3.5:9b none`, the task label copied onto every step (`replay_status`, `success`). The configuration check (`X-Steproute-Mode/Model/Effort`) passed on every call.
+- Nothing paid: `ledger.jsonl` empty in runs 2 and 3 (absent in run 1, the bug below); every outcome's `final_model` is `qwen3.5:9b` and `cost_usd` 0; the only upstream each run's proxy had was `ollama` on `127.0.0.1:11434`.
+- Speed: 2.8-3.9 s per step on average including the command, call latency median 2.0-3.3 s, 32-39 output tokens per second over whole-call time.
+- Unloading: `ollama ps` was empty after each run (`keep_alive = 0`).
+- The context cap: prompt sizes rose monotonically to 30,657 tokens and the run stopped before a call that could pass 32,768 - 2,048; Ollama never truncated a prompt.
+- Run 2's patch is byte-identical to the gold patch (blob `1aa82562`): memorisation of the public fix, the contamination `docs/TASKSET.md` section 1 warns about.
+- Run 2 printed `upstream 'ollama' failed: 500 InternalServerError` once; the call was retried after 5 s and succeeded.
+
+**Bugs found and fixed** (each with a test that fails without the fix):
+
+1. A local-only run wrote no `ledger.jsonl`, so its directory could not show that nothing was spent. The runner now always creates it. `tests/test_replay.py::test_local_only_run_leaves_an_empty_ledger`.
+2. After the Ollama 500 and the runner's call retry, the proxy's identical-request detection marked the failed step `retried = true`, labelled `success = false`: an infrastructure error in the training data as the model's failure. The client now records the decisions of calls that got an error answer, and the runner relabels them unlabelled (`replay_call_failed = true`, `retried = false`, no `tests_passed`). `tests/test_replay.py::test_a_call_retried_after_an_upstream_error_is_not_labelled_a_failure`.
+3. `--patch empty` could not validate an image (the harness never runs it); `--patch baseline` added. `tests/test_tasks.py::test_baseline_patch_changes_no_code_but_is_not_empty` and `test_cli_check_exit_codes`.
+4. The harness and rows were not found unless `[check]` named them (the pre-flight failed on both after a fetch). `find_harness`, `find_rows`; `tests/test_tasks.py::test_find_harness_and_rows_in_the_project`, `test_replay_config_finds_the_project_harness_and_rows`.
+5. One transient 502 failed `tasks fetch`; pages are now retried on 429, 5xx or a dropped connection. `tests/test_tasks.py::test_fetch_rows_retries_a_transient_server_error`.
+
+**The final pre-flight** (`steproute replay preflight --plan pilot`, run from the project root with no config file): `ok` for the Docker daemon (server 28.0.4), the task images ("all 20 present"), the dataset rows, the harness (`.cache/steproute/swebench-env/bin/python -m swebench.harness.run_evaluation`), Ollama, the Ollama models ("all pulled: devstral:24b, gpt-oss:20b, qwen3-coder:30b, qwen3.5:9b") and free disk; `FAIL` only for `ANTHROPIC_API_KEY` and `DEEPSEEK_API_KEY` (not set, on purpose). The rows and the harness live in the checkout's `.cache/`, which git ignores: another checkout needs `steproute tasks fetch` and `scripts/install_swebench.sh` once.
+
+**Found, not changed.**
+
+- `psf__requests-1921` cannot be passed on its arm64 image; whether to drop it is the maintainer's call (`docs/TASKSET.md` section 8.1).
+- The pre-flight's free-disk line measures the host disk at the output directory; images live in the Docker Desktop VM's disk, which the pre-flight does not see.
+- The SWE-bench images run `pip install -e .` in `eval.sh`; with `--network none` the agent cannot install anything in its container, by design.
+
+**Confidence.**
+
+- **High** that the free half of the replay path works on this machine for `qwen3.5:9b`: three real runs, each step and artefact inspected.
+- **High** for the grading table: each check's `report.json` and `test_output.txt` were read.
+- **Medium** for the speeds: measured once per configuration while large downloads ran on the same machine.
+- **Not verified:** any paid provider; the other local models in the agent loop; two models in one local lane; four containers at once; hours of unattended running.

@@ -24,7 +24,18 @@ from steproute.tasks import (
     load_manifest,
     run_check,
 )
-from steproute.tasks.check import GIT_LOCAL_ENV_VARS, fetch_rows, load_rows, workspace_env
+from steproute.tasks.check import (
+    BASELINE_PATCH,
+    DEFAULT_HARNESS,
+    DEFAULT_ROWS,
+    GIT_LOCAL_ENV_VARS,
+    HARNESS_ENV,
+    fetch_rows,
+    find_harness,
+    find_rows,
+    load_rows,
+    workspace_env,
+)
 from steproute.tasks.estimate import (
     Assumptions,
     build_plans,
@@ -315,6 +326,80 @@ def test_fetch_rows_pages_and_round_trips(tmp_path: Path) -> None:
     assert len(rows) == 207 and rows["i206"] == {"instance_id": "i206"}
 
 
+def test_fetch_rows_retries_a_transient_server_error(tmp_path: Path) -> None:
+    # The datasets-server answered 502 to the first real fetch (13 Nov 2026), then served the
+    # page a few seconds later; one bad answer must not fail the fetch.
+    import urllib.error
+
+    calls: list[str] = []
+    slept: list[float] = []
+
+    def get(url: str) -> dict:
+        calls.append(url)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(url, 502, "Bad Gateway", None, None)  # type: ignore[arg-type]
+        return {"rows": [{"row": {"instance_id": "i0"}}]}
+
+    assert fetch_rows(tmp_path / "rows.jsonl", get_json=get, sleep=slept.append) == 1
+    assert len(calls) == 2 and slept == [3.0]
+
+    def forbidden(url: str) -> dict:
+        raise urllib.error.HTTPError(url, 403, "Forbidden", None, None)  # type: ignore[arg-type]
+
+    with pytest.raises(urllib.error.HTTPError):
+        fetch_rows(tmp_path / "none.jsonl", get_json=forbidden, sleep=slept.append)
+    assert not (tmp_path / "none.jsonl").exists()
+
+
+def test_baseline_patch_changes_no_code_but_is_not_empty(tmp_path: Path) -> None:
+    # An empty patch never reaches the harness, so it cannot show that an image's tests fail
+    # before the fix. The baseline patch adds one inert file, so the tests really run.
+    r = swe_backend(tmp_path).check(swe_task(), BASELINE_PATCH)
+    assert r.status == "passed"  # the stand-in harness resolves any patch it is given
+    (run_dir,) = tmp_path.iterdir()
+    pred = json.loads((run_dir / "predictions.jsonl").read_text())
+    assert pred["model_patch"] == BASELINE_PATCH
+    files = [ln for ln in BASELINE_PATCH.splitlines() if ln.startswith("+++ ")]
+    assert files == ["+++ b/.steproute-baseline"]
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=ws, check=True, env=workspace_env())
+    (ws / "p.diff").write_text(BASELINE_PATCH)
+    subprocess.run(["git", "apply", "p.diff"], cwd=ws, check=True, env=workspace_env())
+    assert (ws / ".steproute-baseline").is_file()
+
+
+def test_find_harness_and_rows_in_the_project(tmp_path: Path) -> None:
+    assert find_harness(tmp_path) == DEFAULT_HARNESS
+    assert find_rows(tmp_path) is None
+    py = tmp_path / HARNESS_ENV / "bin" / "python"
+    py.parent.mkdir(parents=True)
+    py.write_text("")
+    rows = tmp_path / DEFAULT_ROWS
+    rows.write_text("{}\n")
+    assert find_harness(tmp_path) == (str(py), "-m", "swebench.harness.run_evaluation")
+    assert find_rows(tmp_path) == rows
+
+
+def test_replay_config_finds_the_project_harness_and_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from steproute.replay.config import parse_replay_config
+
+    monkeypatch.chdir(tmp_path)
+    cfg = parse_replay_config({})
+    assert cfg.harness == DEFAULT_HARNESS and cfg.rows is None
+    (tmp_path / HARNESS_ENV / "bin").mkdir(parents=True)
+    (tmp_path / HARNESS_ENV / "bin" / "python").write_text("")
+    (tmp_path / DEFAULT_ROWS).write_text("{}\n")
+    cfg = parse_replay_config({})
+    assert cfg.harness[0] == str(tmp_path / HARNESS_ENV / "bin" / "python")
+    assert cfg.rows == tmp_path / DEFAULT_ROWS
+    # an explicit [check] still wins
+    cfg = parse_replay_config({"check": {"harness": ["h"], "rows": "r.jsonl"}}, base=tmp_path)
+    assert cfg.harness == ("h",) and cfg.rows == (tmp_path / "r.jsonl").resolve()
+
+
 # --- estimate -----------------------------------------------------------------------------------
 
 
@@ -402,6 +487,7 @@ def test_cli_check_exit_codes(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out.strip().splitlines()
     assert json.loads(out[-1])["tests_passed"] is False
     assert main([*base, "--patch", "empty"]) == 1
+    assert main([*base, "--patch", "baseline"]) == 1  # no code change: the bug is still there
     assert main(["tasks", "check", "nope", "--manifest", str(MANIFEST), "--patch", "empty"]) == 2
 
 

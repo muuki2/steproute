@@ -259,6 +259,11 @@ class ProxyChatClient:
     sleep: Callable[[float], None] = time.sleep
     outcome_timeout_s: float = 30.0
     calls: list[CallRecord] = field(default_factory=list)
+    #: Decisions of calls that got an error answer (a 500 from Ollama, a 429). The runner
+    #: labels them unlabelled at the end: the proxy marks the step before an identical
+    #: re-send as ``retried`` (a weak failure), which for the runner's own call retry would
+    #: record an infrastructure error as the model's failure.
+    failed_decisions: list[str] = field(default_factory=list)
     spent: float = 0.0
     _last_prompt_tokens: int = 0
     _last_chars: int = 0
@@ -399,6 +404,8 @@ class ProxyChatClient:
                 return ChatReply(dict(message or {}), first.get("finish_reason"))
             # An error answer: the provider either refused before doing work (not billed) or
             # timed out (possibly billed): a timeout is charged at the worst case.
+            if headers.get("x-steproute-decision-id"):
+                self.failed_decisions.append(headers["x-steproute-decision-id"])
             err = obj.get("error") if isinstance(obj.get("error"), Mapping) else {}
             kind = str((err or {}).get("type", ""))
             timeout = status in (408, 504)

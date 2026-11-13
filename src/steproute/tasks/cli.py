@@ -10,12 +10,14 @@ from pathlib import Path
 
 from steproute.core.catalog import CatalogError, load_catalog, load_default_catalog
 from steproute.tasks.check import (
-    DEFAULT_HARNESS,
+    BASELINE_PATCH,
+    DEFAULT_ROWS,
     Backend,
     CheckError,
     LocalBackend,
     SwebenchBackend,
     fetch_rows,
+    find_harness,
     load_rows,
     run_check,
 )
@@ -36,7 +38,6 @@ from steproute.tasks.manifest import (
 
 __all__ = ["add_tasks"]
 
-DEFAULT_ROWS = Path(".cache/steproute/SWE-bench_Verified.jsonl")
 MONTHLY_CAP = {"anthropic": 80.0, "deepseek": 20.0}  # decision D3 (DeepSeek: pilot cap)
 
 
@@ -52,7 +53,11 @@ def add_tasks(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     chk = tsub.add_parser("check", help="Apply a patch to a task and run its check.")
     chk.add_argument("task_id")
     chk.add_argument(
-        "--patch", required=True, help="patch file, 'gold' (the reference fix) or 'empty'"
+        "--patch",
+        required=True,
+        help="patch file, 'gold' (the reference fix), 'empty', or 'baseline' (no code change, "
+        "but the tests really run: the image check that must fail; the swebench harness skips "
+        "an 'empty' patch without running anything)",
     )
     chk.add_argument("--manifest", type=Path, help="manifest TOML (default: the built-in set)")
     chk.add_argument(
@@ -60,8 +65,8 @@ def add_tasks(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     )
     chk.add_argument(
         "--harness",
-        default=" ".join(DEFAULT_HARNESS),
-        help="command that runs swebench.harness.run_evaluation",
+        help="command that runs swebench.harness.run_evaluation (default: the pinned "
+        "environment of scripts/install_swebench.sh when installed, else `python -m ...`)",
     )
     chk.add_argument("--timeout", type=float, help="seconds for the check (default: the task's)")
     chk.add_argument("--keep", action="store_true", help="keep the workspace or harness logs")
@@ -126,11 +131,12 @@ def _check(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            backend = SwebenchBackend(
-                load_rows(args.rows), harness=shlex.split(args.harness), keep_logs=args.keep
-            )
+            harness = shlex.split(args.harness) if args.harness else find_harness()
+            backend = SwebenchBackend(load_rows(args.rows), harness=harness, keep_logs=args.keep)
         if args.patch == "empty":
             patch = ""
+        elif args.patch == "baseline":
+            patch = BASELINE_PATCH
         elif args.patch == "gold":
             if isinstance(backend, SwebenchBackend):
                 patch = backend.gold_patch(task)

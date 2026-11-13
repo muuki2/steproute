@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -36,13 +37,18 @@ from steproute.tasks.manifest import Task
 
 __all__ = [
     "CHECK_STATUSES",
+    "BASELINE_PATCH",
     "DEFAULT_HARNESS",
+    "DEFAULT_ROWS",
+    "HARNESS_ENV",
     "Backend",
     "CheckError",
     "CheckResult",
     "LocalBackend",
     "SwebenchBackend",
     "fetch_rows",
+    "find_harness",
+    "find_rows",
     "load_rows",
     "run_check",
     "run_command",
@@ -56,6 +62,44 @@ CHECK_STATUSES = ("passed", "failed", "patch_failed", "timeout", "error")
 #: How the swebench backend invokes the harness. Any prefix that ends in the harness module
 #: works, for example ``uvx --from swebench==5.0.2 python -m swebench.harness.run_evaluation``.
 DEFAULT_HARNESS: tuple[str, ...] = ("python", "-m", "swebench.harness.run_evaluation")
+
+#: The pinned, project-local harness environment that ``scripts/install_swebench.sh``
+#: creates (``swebench==5.0.2``), relative to the project root.
+HARNESS_ENV = Path(".cache/steproute/swebench-env")
+#: Where ``steproute tasks fetch`` writes the dataset rows, relative to the project root.
+DEFAULT_ROWS = Path(".cache/steproute/SWE-bench_Verified.jsonl")
+
+
+#: A patch that changes no code: it only adds one inert file at the repository root. The
+#: harness skips an empty patch without starting a container (counted unresolved), so
+#: ``--patch empty`` proves nothing about an image; this one makes the harness run the tests
+#: on the unchanged code, which must fail (FAIL_TO_PASS fails before the fix). It is the
+#: "empty patch must fail" half of image validation.
+BASELINE_PATCH = (
+    "diff --git a/.steproute-baseline b/.steproute-baseline\n"
+    "new file mode 100644\n"
+    "--- /dev/null\n"
+    "+++ b/.steproute-baseline\n"
+    "@@ -0,0 +1 @@\n"
+    "+baseline check: no source change\n"
+)
+
+
+def find_harness(root: Path | None = None) -> tuple[str, ...]:
+    """The harness command: the project-local pinned environment under ``root`` (the current
+    directory by default) when it is installed, else ``DEFAULT_HARNESS`` (whatever ``python``
+    is on ``PATH``)."""
+    py = (Path.cwd() if root is None else root) / HARNESS_ENV / "bin" / "python"
+    if py.is_file():
+        return (str(py.absolute()), "-m", "swebench.harness.run_evaluation")
+    return DEFAULT_HARNESS
+
+
+def find_rows(root: Path | None = None) -> Path | None:
+    """The fetched dataset rows under ``root`` (the current directory by default), if any."""
+    p = (Path.cwd() if root is None else root) / DEFAULT_ROWS
+    return p.absolute() if p.is_file() else None
+
 
 # Markers the harness writes to run_instance.log (swebench/harness/constants, v5.0.x).
 _APPLY_PATCH_FAIL = ">>>>> Patch Apply Failed"
@@ -299,22 +343,56 @@ def _urllib_get_json(url: str) -> Any:
         return json.loads(resp.read().decode("utf-8"))
 
 
+#: HTTP statuses of the datasets-server worth retrying (it answered 502 on 13 Nov 2026, then
+#: served the same page a few seconds later).
+_FETCH_TRANSIENT = frozenset({429, 500, 502, 503, 504})
+
+
+def _get_with_retries(
+    get: Callable[[str], Any],
+    url: str,
+    retries: int,
+    backoff_s: float,
+    sleep: Callable[[float], None],
+) -> Any:
+    for attempt in range(retries + 1):
+        try:
+            return get(url)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _FETCH_TRANSIENT or attempt == retries:
+                raise
+        except urllib.error.URLError:
+            if attempt == retries:
+                raise
+        sleep(backoff_s * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 def fetch_rows(
     dest: str | Path,
     *,
     dataset: str = "SWE-bench/SWE-bench_Verified",
     split: str = "test",
     get_json: Callable[[str], Any] | None = None,
+    retries: int = 4,
+    backoff_s: float = 3.0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> int:
     """Download every row of ``dataset`` from the Hugging Face datasets-server into ``dest``
-    (JSONL). For SWE-bench Verified that is 500 rows, about 9 MB. Returns the row count."""
+    (JSONL). For SWE-bench Verified that is 500 rows, about 9 MB. Returns the row count.
+    A transient HTTP error (429, 5xx) or a dropped connection is retried ``retries`` times
+    per page; nothing is written unless every page arrived."""
     get = get_json or _urllib_get_json
     base = "https://datasets-server.huggingface.co/rows"
     name = urllib.parse.quote(dataset, safe="")
     rows: list[Any] = []
     while True:
-        page = get(
-            f"{base}?dataset={name}&config=default&split={split}&offset={len(rows)}&length=100"
+        page = _get_with_retries(
+            get,
+            f"{base}?dataset={name}&config=default&split={split}&offset={len(rows)}&length=100",
+            retries,
+            backoff_s,
+            sleep,
         )
         batch = [r["row"] for r in page.get("rows", [])]
         rows += batch

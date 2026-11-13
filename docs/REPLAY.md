@@ -4,7 +4,7 @@
 
 Code: `src/steproute/replay/` (standard library only; a run that calls a model needs the `[proxy]` extra). Issue 18; the task set and the approved sparse grid (option B) are in `docs/TASKSET.md`; the grid format is `docs/EVALUATION.md` section 2.1.
 
-**Status: nothing here has been run against a real provider, Docker or Ollama.** Every test drives the mock upstream on loopback. See "What has never been tested".
+**Status (13 Nov 2026, issue 56): the free half has run on real infrastructure; no paid provider has ever been called.** Three local runs went end to end on this Mac (Docker task container, the proxy, Ollama's `/v1`, the official harness, the grid and traces), and the pilot's images were validated with the gold and baseline patches. The test suite still drives only the mock upstream on loopback. See "Tested on real infrastructure" and "What has never been tested".
 
 ## Commands
 
@@ -24,8 +24,10 @@ Exit codes of `run` and `resume`: `0` every cell finished; `4` a cap stopped a p
 
 1. **Prerequisites.**
    - `uv sync --extra proxy` (the runner uses the proxy's pinned LiteLLM).
-   - Docker running, and the 20 pilot images pulled and validated: for each pilot task, `steproute tasks check <id> --patch gold` must pass and `--patch empty` must fail (`docs/TASKSET.md` section 5, item 5). This costs nothing but Docker time.
-   - The dataset rows: `steproute tasks fetch` (problem statements and tests come from them).
+   - The official harness, pinned: `scripts/install_swebench.sh` puts `swebench==5.0.2` (every dependency at an exact version, `scripts/swebench-requirements.txt`) into `.cache/steproute/swebench-env`. Run from the project root, `steproute tasks check` and the runner find it there without a `[check] harness` line.
+   - Docker running, and the 20 pilot images pulled and validated: for each pilot task, `steproute tasks check <id> --patch gold` must pass and `--patch baseline` must fail (`docs/TASKSET.md` section 5, item 5). `--patch empty` is not a validation: the harness skips an empty patch without starting a container. This costs nothing but Docker time (18 to 85 s per check, median about 21 s, measured).
+   - The Epoch images on `ghcr.io`: on this Mac `docker pull` of them failed with `403 Forbidden` on the token request, because Docker Desktop presents the credential stored for `ghcr.io`, which these public repositories refuse; an anonymous token works. `scripts/fetch_ghcr_image.py` fetches one anonymously and `docker load`s it. Removing the stored `ghcr.io` login (`docker logout ghcr.io`) would also fix it, but that is the maintainer's credential and was not touched.
+   - The dataset rows: `steproute tasks fetch` (problem statements and tests come from them). Run from the project root, the runner finds them at `.cache/steproute/SWE-bench_Verified.jsonl` without a `[check] rows` line.
    - Ollama started with the D2 settings, and every local pilot model pulled:
      `OLLAMA_CONTEXT_LENGTH=32768 OLLAMA_MAX_LOADED_MODELS=1 ollama serve`, then `ollama pull qwen3.5:9b gpt-oss:20b qwen3-coder:30b devstral:24b`.
    - The two API keys in environment variables (by default `ANTHROPIC_API_KEY` and `DEEPSEEK_API_KEY`). They must be **API keys** from the API console, never the Claude subscription (decision D7). DeepSeek is required: without its key the runner stops before doing anything.
@@ -78,8 +80,8 @@ kind = "docker"           # or "local" (tests: a plain directory)
 docker = "docker"
 manage_ollama = true      # unload the previous local model before the next
 
-[check]
-harness = ["python", "-m", "swebench.harness.run_evaluation"]
+[check]                   # unset: the pinned harness and the fetched rows in the project
+# harness = [".cache/steproute/swebench-env/bin/python", "-m", "swebench.harness.run_evaluation"]
 # rows = ".cache/steproute/SWE-bench_Verified.jsonl"
 ```
 
@@ -161,14 +163,28 @@ Only the first two rows are model outcomes. The others are recorded in the grid 
 
 `steproute replay report` (`report.py`) reads a finished pilot's directory and writes `docs/results/pilot.md`. The re-estimate of the sparse grid prices each sparse configuration at its measured $/run where the pilot ran it, otherwise the task-set estimate times the measured realised/estimated ratio of the same model, or of the same provider, or unchanged (the table counts which). A directory whose paid providers pointed at loopback is marked "MOCK DATA. NOT A PILOT." at the top. The test `test_pilot_report_on_mock_data_is_marked_mock` runs it on mock data; no results file is checked in.
 
+## Tested on real infrastructure (13 Nov 2026, issue 56)
+
+On the maintainer's M4 Pro: Docker Desktop 28.0.4 (arm64, a VM of 8 GB), Ollama 0.40.16 started with `OLLAMA_CONTEXT_LENGTH=32768 OLLAMA_MAX_LOADED_MODELS=1`, the harness `swebench==5.0.2` from `scripts/install_swebench.sh`. No paid provider was called by any route, and no key was set in the environment of any run. The evidence is in `docs/INTEGRATION-NOTES.md` section 14.
+
+- **The 20 pilot images and the official harness on this Mac.** All 20 pulled and ran natively on arm64; 19 grade correctly (gold passes, baseline fails). **`psf__requests-1921` fails even with the gold patch** (pytest 8 in the image, and tests that need `https://httpbin.org`), so no model can pass it: `docs/TASKSET.md` section 8.1 has the table and the harness output.
+- **`DockerWorkspace` on the real images.** The container starts in about 0.3 s, `/testbed` is a clean checkout with the image's own commits, and the runner's `base` commit goes on top. Checked inside the container, not taken from the code: `env` shows only the fixed set (the image's own `ENV` lines such as `HOME` and the conda variables, plus the runner's `LANG`, `PAGER`, `PYTHONDONTWRITEBYTECODE` and friends) and no host variable; `--network none` leaves only `lo` and tunnel stubs, and a DNS lookup fails ("Temporary failure in name resolution"). `BASH_ENV` activates the `testbed` conda environment (`python` is the testbed's 3.11). `git diff` after an edit is the patch; the container is removed at the end (`docker ps` empty after every run).
+- **The proxy against a real Ollama `/v1`.** Structured `tool_calls` arrive for every step of `qwen3.5:9b` (effort `none`); every step is a route-mode decision and outcome with `source = "replay"`, policy `replay-fixed`, the planned model and effort, and the configuration check passed on every call. Ollama's `/v1` reports cached prompt tokens (`prompt_tokens_details.cached_tokens`): 96% of prompt tokens were prefix-cache reads.
+- **Unloading** with `keep_alive = 0`: after each run `ollama ps` was empty.
+- **The context cap in practice:** a run on a long task (`pytest-dev__pytest-5787`) grew to 30,657 prompt tokens in 54 steps and ended as `context_limit` before the next call ("prompt of about 31723 tokens passes the local cap", the cap being 32,768 - 2,048). Reported prompt sizes rose monotonically, so Ollama never truncated a prompt silently.
+- **The check after a run:** a submitted patch went through the official harness and came back `passed` (`check.json`, grid `success = true`).
+- **What a run writes:** `grid.jsonl` (one run line per cell), `runs.jsonl` (start and end), `ledger.jsonl` (empty: no paid call), `plan.json`, `runs/<id>/` with `result.json`, `trajectory.json`, `workspace.diff`, `patch.diff` and `check.json`, and `traces/` with 100% of decisions joined to outcomes and the task label copied onto every step.
+- **Measured speed** (`qwen3.5:9b`, effort `none`, M4 Pro): 2.8-3.9 s per step including the command, about 32-39 output tokens per second over call time, 2.3-3.9 minutes per 40-54-step run. The harness check: 18-85 s per task, median about 21 s (about 15 s of it is the harness stopping its container).
+- **Bugs found and fixed** (each with a regression test): a local-only run wrote no `ledger.jsonl`; an HTTP 500 from Ollama, retried by the runner, left that step labelled `success = false` through the proxy's `retried` signal; `--patch empty` could never show that an image's tests fail (the harness skips empty patches), so `--patch baseline` was added; the harness and rows were not found without a `[check]` section; one transient 502 from the datasets-server failed `tasks fetch`.
+
 ## What has never been tested
 
-Everything below needs a real provider, Docker or Ollama, none of which was used:
+Everything below needs a paid provider, or more time on the real machine than issue 56 had:
 
 - **Any paid call.** The Anthropic path runs through LiteLLM's real `anthropic` provider against the Anthropic-format mock, and DeepSeek through LiteLLM's `deepseek` provider against the OpenAI-format mock; the real APIs, their errors, rate limits and reported usage were never seen. **That the pilot finishes under the caps is untested**; what makes it true is the cap guard, the ledger and the cheapest-first order, all tested against the mock.
 - **That prompt caching reaches Anthropic** through the proxy and shows up as cache reads in the reported usage (the task-set document's precondition 1). The cache canary is the guard; the first paid Claude runs are the test.
-- **`DockerWorkspace`** (its command lines are tested against a stand-in `docker` executable only), the arm64 images, `--network none` with the SWE-bench images, and the official harness on this Mac.
-- **Ollama**: unloading with `keep_alive = 0`, the local models' tool calls through `/v1`, and the context cap in practice.
+- **Local models other than `qwen3.5:9b` in the agent loop.** `gpt-oss:20b`, `qwen3-coder:30b` and `devstral:24b` passed the one-call tool smoke test (`steproute catalog check`, all four PASS) only; none of them ran a task, and their speed is not measured. Model switching in the local lane (one model unloaded before the next) never ran with two models in one plan.
+- **Parallel containers under load.** Two containers (one agent, one harness) ran side by side once without trouble in the 8 GB VM; the pilot's paid lane (two runs) plus the local lane and their checks (up to four containers) was not tried.
 - **Real step counts and costs** of the 5.5 and 5.2 Claude models and the current DeepSeek models on this scaffold, which the pilot exists to measure.
-- **Wall time**: hours of unattended running, and the 2-hour per-run timeout.
+- **Wall time**: hours of unattended running, and the 2-hour per-run timeout (`run_timeout_s`; no real run came near it, the longest took under 4 minutes).
 - **The proxy's privacy rule on real repositories.** Test fixtures in SWE-bench repositories may contain secret-shaped strings; a step that trips the detector is sent nowhere and the run ends `blocked_sensitive`. How often that happens is unknown.

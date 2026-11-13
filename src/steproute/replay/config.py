@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from steproute.collectors.proxy.config import is_env_name, is_loopback_host
+from steproute.tasks.check import find_harness, find_rows
 
 __all__ = [
     "DEFAULT_CAPS",
@@ -234,9 +235,16 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
     check = _table(data, "check")
     if sorted(set(check) - {"harness", "rows"}):
         raise ReplayConfigError("[check] takes harness and rows")
-    harness = _value("[check] harness", check.get("harness", list(ReplayConfig.harness)), "strs")
+    # Unset, both are looked up in the current directory (the project root): the pinned
+    # harness of scripts/install_swebench.sh and the rows of `steproute tasks fetch`.
+    if "harness" in check:
+        harness = _value("[check] harness", check["harness"], "strs")
+    else:
+        harness = find_harness()
     rows = check.get("rows")
-    rows_p = (base / _value("[check] rows", rows, "str")).resolve() if rows is not None else None
+    rows_p = (
+        (base / _value("[check] rows", rows, "str")).resolve() if rows is not None else find_rows()
+    )
 
     cat = _table(data, "catalog")
     if sorted(set(cat) - {"path"}):
