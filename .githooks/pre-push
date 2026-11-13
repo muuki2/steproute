@@ -4,4 +4,10 @@
 #
 # The pipeline checks the working tree you are in, so push from the branch
 # you are pushing. `git push --no-verify` skips it.
-exec "$(git rev-parse --show-toplevel)/scripts/ci.sh"
+top=$(git rev-parse --show-toplevel)
+# Git exports GIT_DIR and related variables to hooks. The pipeline must not
+# inherit them: tests run git in scratch directories, and with these set
+# those commands would act on this repository.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+exec "$top/scripts/ci.sh"
