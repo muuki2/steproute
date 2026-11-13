@@ -1058,7 +1058,7 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 
 ## 12. Issue 14: the Claude Code mod, checked against the docs and in real sessions
 
-*Added by issue 14, checked 2026-11-13.* Claude Code **2.1.323** (`claude --version`), whose bundled `plugin-authoring` skill wrote this build's mod type declarations (`claude-code.d.ts`, "Written by Claude Code 2.1.323"). Docs read the same day: https://code.claude.com/docs/en/plugins/mods/overview, `/plugins/mods/events`, `/plugins/mods/reference`, `/plugins/components`, `/plugins/manifest-reference`, `/sub-agents`. Three real sessions were run (below). The plugin is `plugins/claude-code`, documented in `docs/CLAUDE-CODE.md`.
+*Added by issue 14, checked 2026-11-13.* Claude Code **2.1.323** (`claude --version`). The mod type declarations that ship with that build (`claude-code.d.ts`) were used alongside the docs. Docs read the same day: https://code.claude.com/docs/en/plugins/mods/overview, `/plugins/mods/events`, `/plugins/mods/reference`, `/plugins/components`, `/plugins/manifest-reference`, `/sub-agents`. Three real sessions were run (below). The plugin is `plugins/claude-code`, documented in `docs/CLAUDE-CODE.md`.
 
 **Answer.**
 
