@@ -1,0 +1,11 @@
+decisions: 4
+outcomes: 5
+joined: 3
+join rate: 75.0%
+skipped lines: 0
+total cost: $1.0225
+outcomes without cost: 1
+superseded outcomes: 1
+success rate by first action (model, effort):
+  haiku low: 50.0% (n=2)
+  opus high: 100.0% (n=1)
