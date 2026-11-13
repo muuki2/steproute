@@ -4,13 +4,36 @@
 
 ```
 uv sync --extra dev
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest
+git config core.hooksPath .githooks
 ```
 
-CI runs the same checks on Python 3.11 and 3.12.
+The second line enables the pre-push hook, which runs the CI pipeline before anything leaves your machine.
+
+## CI is local
+
+The repository uses no hosted CI. One script is the pipeline:
+
+```
+scripts/ci.sh
+```
+
+It runs, in order:
+
+1. `ruff check` and `ruff format --check`
+2. `mypy --strict` on `src/steproute/core` and `pytest`, on Python 3.11 and 3.12
+3. a package build, then installs the wheel into a throwaway environment and runs it
+
+Each interpreter gets its own environment under `.ci/`, installed from `uv.lock`, so your `.venv` is not touched. `CI_PYTHONS=3.12 scripts/ci.sh` runs a single interpreter.
+
+After pushing, publish the result so the pull request shows it:
+
+```
+scripts/ci.sh --report
+```
+
+This posts a `local-ci` commit status on `HEAD`. It needs a clean working tree and the GitHub CLI (`gh`) signed in. If the same commit already passed in the pre-push hook, it reports without running again.
+
+For a quick loop while editing, the individual tools work as usual: `uv run pytest`, `uv run ruff check .`, `uv run mypy`.
 
 ## Conventions
 
@@ -22,4 +45,4 @@ CI runs the same checks on Python 3.11 and 3.12.
 
 ## Pull requests
 
-One pull request per issue. Put `Closes #N` in the PR description. Work items are listed in [docs/ISSUES.md](docs/ISSUES.md).
+One pull request per issue. Put `Closes #N` in the PR description. A pull request is ready for review when `local-ci` is green on its head commit. Work items are listed in [docs/ISSUES.md](docs/ISSUES.md).

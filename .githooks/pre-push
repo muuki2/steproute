@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run the local CI pipeline before a push leaves this machine.
+# Enable once per clone:  git config core.hooksPath .githooks
+#
+# The pipeline checks the working tree you are in, so push from the branch
+# you are pushing. `git push --no-verify` skips it.
+exec "$(git rev-parse --show-toplevel)/scripts/ci.sh"
