@@ -1,0 +1,112 @@
+# Assumptions behind the replay-grid cost estimate (issue 17). Edit freely and re-run
+#   steproute tasks estimate --plan <name> [--assumptions this-file]
+# Prices are NOT here: they come from the model catalog (src/steproute/catalogs/default.toml).
+# Every number is tagged: [measured: source] by someone else, [derived] by us from measured
+# data, or [assumed] (a guess the pilot replaces). Sources and discussion: docs/TASKSET.md.
+
+[meta]
+scaffold = "mini-SWE-agent 2.x (bash only, linear history, step_limit 250, cost_limit $3)"
+benchmark = "SWE-bench Verified, issue-17 selection (150 tasks)"
+checked = "2026-11-13"
+
+[limits]
+step_limit = 250          # [measured: mini-swe-agent config/benchmarks/swebench.yaml]
+run_cost_cap_usd = 3.0    # [measured: same file, cost_limit]; a capped run is a failure
+local_context_cap = 32768 # decision D2; a local run whose prompt passes it ends as a failure
+eval_seconds = 120        # [assumed] container start plus test run, per run, every provider
+
+# Per-run token shape. Prompt at step k (0-based) = prompt_base + growth_per_step * k.
+# cache_hit = share of the previous step's prompt read from the cache at the next step.
+# steps_mult scales every step count below.
+[scenario.low]
+prompt_base = 1800     # [measured: 1.5-2.2K at step 1 in public mini-SWE-agent trajectories]
+growth_per_step = 450  # [measured: 0.45-0.7K per step, same trajectories]
+output_per_step = 200  # [measured: 110-360 per step for Claude 4.5/4.6, same trajectories]
+cache_hit = 0.96       # [measured: 0.92-0.97 for Claude with cache_control]
+steps_mult = 0.8       # [assumed] our pool is a generation newer than the analogs
+
+[scenario.central]
+prompt_base = 2000     # [derived] reproduces published mean $/instance of Claude 4.5/4.6
+growth_per_step = 550  # [derived] within 15% (docs/TASKSET.md, "Calibration")
+output_per_step = 250  # [derived]
+cache_hit = 0.95       # [measured: 0.94-0.97]
+steps_mult = 1.0
+
+[scenario.high]
+prompt_base = 2500     # [assumed]
+growth_per_step = 650  # [measured: upper end of 0.45-0.7K]
+output_per_step = 400  # [assumed] newer models reason more per step
+cache_hit = 0.90       # [assumed] some TTL expiry and divergence
+steps_mult = 2.0       # [derived] matches 4.3-4.7M tokens/task for Claude 5 [high] on SWE-rebench
+
+# Output-token multiplier per effort, relative to "high" (the effort of most analog runs).
+[effort.output_mult]
+none = 0.4     # [assumed]
+low = 0.5      # [assumed]
+medium = 0.75  # [assumed]; Anthropic: Opus 4.5 medium used 76% fewer output tokens than Sonnet 4.5 best
+high = 1.0
+xhigh = 1.5    # [assumed]; GPT-5.x medium -> xhigh was 2.0-3.0x tokens on SWE-rebench
+max = 2.0      # [assumed]
+
+# Step-count multiplier per effort. Claude effort changed steps by under 15% in public runs.
+[effort.steps_mult]
+none = 1.1     # [assumed]
+low = 1.1      # [assumed]
+medium = 1.0
+high = 1.0
+xhigh = 1.0
+max = 1.0
+
+# Steps per run: 20 quantiles (5th, 10th, ... 95th percentile) of the API-call counts of an
+# analog model on the 150 selected tasks. [derived from measured per-instance api_calls in
+# SWE-bench/experiments at commit 40f164d5, by scripts/select_taskset.py]
+[steps.claude-haiku-5-5]
+analog = "20260217_mini-v2.0.0_claude-4-5-haiku-high"
+quantiles = [24, 31, 38, 43, 47, 50, 56, 61, 64, 66, 69, 71, 77, 79, 81, 89, 92, 102, 109, 154]
+
+[steps.claude-sonnet-5-5]
+analog = "20260217_mini-v2.0.0_claude-4-5-sonnet-high"
+quantiles = [21, 29, 31, 34, 35, 37, 39, 40, 41, 45, 46, 49, 50, 52, 56, 59, 62, 71, 78, 97]
+
+[steps.claude-opus-5-5]
+analog = "20260217_mini-v2.0.0_claude-4-5-opus-high"
+quantiles = [13, 17, 19, 21, 21, 23, 24, 25, 26, 28, 30, 32, 34, 37, 39, 41, 47, 51, 58, 73]
+
+[steps.claude-fable-5-2]
+analog = "20260217_mini-v2.0.0_claude-4-6-opus"
+quantiles = [9, 11, 13, 14, 16, 18, 18, 21, 22, 26, 27, 30, 33, 36, 40, 45, 48, 56, 63, 90]
+
+[steps.deepseek-flash]
+analog = "20260217_mini-v2.0.0_deepseek-3-2-high"
+quantiles = [40, 57, 61, 64, 66, 70, 73, 78, 81, 85, 89, 91, 95, 98, 101, 108, 116, 131, 140, 192]
+
+[steps.deepseek-v4-pro]
+analog = "20260217_mini-v2.0.0_deepseek-3-2-high"
+quantiles = [40, 57, 61, 64, 66, 70, 73, 78, 81, 85, 89, 91, 95, 98, 101, 108, 116, 131, 140, 192]
+
+# Local models: steps only drive wall time (price 0). One weak open analog for all four.
+[steps.default]
+analog = "20250803_mini-v1.0.0_qwen2-5-coder-32b-instruct"
+quantiles = [5, 7, 10, 14, 17, 18, 19, 22, 27, 30, 33, 37, 41, 48, 60, 71, 78, 102, 188, 250]
+
+# Local throughput on the M4 Pro (tokens per second), for wall time only.
+# prefill counts only tokens not reused from the KV cache.
+[local.qwen3-coder-30b]
+model = "qwen3-coder:30b"
+prefill_tps = 750   # [measured: omlx.ai community run, M4 Pro 48 GB, 4-bit MLX]
+gen_tps = 60        # [measured: same run, 61-73 t/s at 1-4K context]
+
+[local.gpt-oss-20b]
+model = "gpt-oss:20b"
+prefill_tps = 500   # [derived: M1 Pro 516, M4 Max 568 at 32K depth, llama.cpp discussion 15396]
+gen_tps = 50        # [derived: M1 Pro 46, M4 Max 65-92]
+
+[local.qwen3-5-9b]
+model = "qwen3.5:9b"
+prefill_tps = 400   # [derived: 7B Q4_0 on M4 Pro 440 t/s, llama.cpp discussion 4167]
+gen_tps = 40        # [derived: 7B Q4_0 on M4 Pro 50 t/s, scaled for 9B]
+
+[local.devstral-24b]
+model = "devstral:24b"
+prefill_tps = 200   # [assumed: scaled from 7B dense; nothing measured]
+gen_tps = 17        # [assumed]
