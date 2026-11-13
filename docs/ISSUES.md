@@ -9,7 +9,7 @@
 1. Create the labels and milestones listed below, then one GitHub issue per `## Issue` block (title = heading, body = everything under it).
 2. Work in dependency order. Issues with no unmet `Depends on` can run in parallel.
 3. Give each issue to **one fresh subagent** on the model named in its `Model` line. Do not switch model inside an issue; if the assigned model fails twice, first add a failing test that pins the problem, then raise effort one level, then move the issue up a tier.
-4. An issue is done only when every acceptance criterion passes in CI. One PR per issue, referencing it with `Closes #N`.
+4. An issue is done only when every acceptance criterion passes in CI. CI is the local pipeline `scripts/ci.sh`; the project uses no hosted CI. One PR per issue, referencing it with `Closes #N`.
 5. Anything marked **VERIFY** is a claim this document could not confirm. Check it against current upstream docs or source before writing code that depends on it, and record what you found in `docs/INTEGRATION-NOTES.md`.
 6. The **Resolved decisions** table is binding. Two approval gates remain and are marked **HUMAN GATE**: stop and ask there; do not guess.
 7. Priority is tool first: if work must be sequenced, M1 collectors come before M2 to M4. M4 still runs, subject to the go/no-go in issue 23.
@@ -22,6 +22,7 @@
 - Package and repo name: `steproute`. Licence: MIT.
 - Core (`steproute.core`) has **no third-party runtime dependencies**. Heavier parts are extras: `[proxy]`, `[mcp]`, `[ml]`, `[graph]`.
 - Money is USD; prices are per million tokens; time is milliseconds; timestamps are Unix seconds (float).
+- CI is local: `scripts/ci.sh` runs ruff, mypy and pytest on Python 3.11 and 3.12, then a package build. No GitHub Actions. After pushing, `scripts/ci.sh --report` publishes the result as the `local-ci` commit status on the PR's head commit.
 - No network calls in unit tests. Provider calls are mocked or recorded.
 - Never log prompt or completion text unless `capture_text=true` is set explicitly.
 
@@ -84,12 +85,12 @@
 **Tasks**
 - `pyproject.toml` (uv, src layout, extras `proxy`, `mcp`, `ml`, `graph`, `dev`).
 - Package skeleton: `steproute/core`, `steproute/collectors`, `steproute/eval`, `steproute/ml`, `steproute/graph`.
-- GitHub Actions: ruff, mypy on core, pytest on 3.11 and 3.12.
+- Local CI pipeline (`scripts/ci.sh` plus a pre-push hook, no GitHub Actions): ruff, mypy on core, pytest on 3.11 and 3.12, package build.
 - `README.md` with a one-paragraph pitch and a link to `docs/DESIGN.md`; MIT `LICENSE`; `CONTRIBUTING.md`.
 
 **Acceptance criteria**
 - `uv sync --extra dev && uv run pytest` passes on a clean clone.
-- CI is green on the scaffold PR.
+- The local pipeline is green on the scaffold PR (`local-ci` commit status).
 - `import steproute.core` pulls in no third-party module (test asserts this via `sys.modules`).
 
 ## Issue 2: Trace schema
