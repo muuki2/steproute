@@ -19,6 +19,7 @@ from steproute.core import (
     Decision,
     ModelProfile,
     Outcome,
+    PriceTier,
     StepState,
     UnknownFieldWarning,
     effort_rank,
@@ -66,6 +67,15 @@ profiles = st.builds(
     efforts=st.lists(st.sampled_from(EFFORTS), max_size=6).map(tuple),
     effort_output_mult=st.dictionaries(text, finite, max_size=3),
     meta=json_dicts,
+    tier=ints,
+    tools=st.booleans(),
+    holdout=st.booleans(),
+    verified=st.booleans(),
+    price_tiers=st.lists(
+        st.builds(PriceTier, above_tokens=ints, price_in=finite, price_out=finite), max_size=2
+    ).map(tuple),
+    effort_map=st.dictionaries(text, text, max_size=3),
+    effort_change_keeps_cache=st.booleans(),
 )
 states = st.builds(
     StepState,
@@ -286,7 +296,14 @@ def test_json_schema_is_up_to_date() -> None:
 
 def test_json_schema_shape() -> None:
     schema = load_json_schema()
-    assert set(schema["$defs"]) == {"Action", "ModelProfile", "StepState", "Decision", "Outcome"}
+    assert set(schema["$defs"]) == {
+        "Action",
+        "PriceTier",
+        "ModelProfile",
+        "StepState",
+        "Decision",
+        "Outcome",
+    }
     esc = schema["$defs"]["Action"]["properties"]["escalate_to"]
     assert {"$ref": "#/$defs/Action"} in esc["anyOf"]
     for d in schema["$defs"].values():
@@ -340,7 +357,7 @@ def test_doc_examples_validate_and_roundtrip() -> None:
     assert dec.decision_id == out.decision_id
 
 
-@pytest.mark.parametrize("cls", [Action, ModelProfile, StepState, Decision, Outcome])
+@pytest.mark.parametrize("cls", [Action, PriceTier, ModelProfile, StepState, Decision, Outcome])
 def test_doc_documents_every_field(cls: type) -> None:
     md = SCHEMA_MD.read_text(encoding="utf-8")
     section = re.search(rf"^## {cls.__name__}\n(.*?)(?=^## )", md, flags=re.S | re.M)

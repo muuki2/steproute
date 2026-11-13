@@ -10,9 +10,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from steproute import __version__
+from steproute.core.catalog import Catalog, CatalogError, load_catalog, load_default_catalog
 from steproute.core.export import export_replay
 from steproute.core.privacy import ScrubOptions
+from steproute.core.schema import ModelProfile
 from steproute.core.store import StoreStats, TraceStore, compute_stats
+from steproute.core.toolcheck import DEFAULT_BASE_URL, Transport, check_model, urllib_transport
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"steproute {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     _add_traces(sub)
+    _add_catalog(sub)
     return parser
 
 
@@ -47,6 +51,102 @@ def _add_traces(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
         help="salt for --scrub (default: $STEPROUTE_SCRUB_SALT, else random per export)",
     )
     export.set_defaults(func=_traces_export)
+
+
+def _add_catalog(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``catalog`` command group."""
+    cat = sub.add_parser("catalog", help="Inspect and smoke-test the model catalog.")
+    csub = cat.add_subparsers(dest="catalog_command", metavar="<subcommand>", required=True)
+    show = csub.add_parser("show", help="List the models in a catalog.")
+    check = csub.add_parser(
+        "check", help="Tool-call smoke test against an OpenAI-compatible endpoint."
+    )
+    for p in (show, check):
+        p.add_argument("--catalog", type=Path, help="catalog TOML (default: the built-in one)")
+    show.set_defaults(func=_catalog_show)
+    check.add_argument("--base-url", default=DEFAULT_BASE_URL, help="default: local Ollama")
+    check.add_argument(
+        "--model", action="append", metavar="ID", help="model id to check (repeatable)"
+    )
+    check.add_argument("--timeout", type=float, default=120.0, help="seconds per request")
+    check.set_defaults(func=_catalog_check)
+
+
+def _load(path: Path | None) -> Catalog | None:
+    try:
+        return load_catalog(path) if path else load_default_catalog()
+    except (CatalogError, OSError) as exc:
+        print(f"steproute: {exc}", file=sys.stderr)
+        return None
+
+
+def format_catalog(models: Sequence[ModelProfile]) -> str:
+    rows = [("id", "provider", "tier", "efforts", "flags")]
+    for m in models:
+        flags = [
+            f
+            for f, on in (
+                ("local", m.local),
+                ("holdout", m.holdout),
+                ("no-tools", not m.tools),
+                ("verified" if m.verified else "unverified", True),
+            )
+            if on
+        ]
+        rows.append((m.id, m.provider, str(m.tier), ",".join(m.efforts), ",".join(flags)))
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
+    return "\n".join(
+        "  ".join(c.ljust(w) for c, w in zip(r, widths, strict=True)).rstrip() for r in rows
+    )
+
+
+def _catalog_show(args: argparse.Namespace) -> int:
+    catalog = _load(args.catalog)
+    if catalog is None:
+        return 2
+    print(format_catalog(list(catalog)))
+    return 0
+
+
+def _catalog_check(args: argparse.Namespace) -> int:
+    catalog = _load(args.catalog)
+    if catalog is None:
+        return 2
+    transport: Transport = getattr(args, "transport", None) or urllib_transport
+    if args.model:
+        try:
+            models = [catalog.get(i) for i in args.model]
+        except KeyError as exc:
+            print(f"steproute: model {exc.args[0]!r} is not in the catalog", file=sys.stderr)
+            return 2
+        cloud = [m.id for m in models if not m.local]
+        if cloud:
+            print(
+                f"steproute: {', '.join(cloud)} is not local; cloud models are checked "
+                "through the proxy, not by this command",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        models = list(catalog.local_models())
+    failed = 0
+    for m in models:
+        r = check_model(m.id, base_url=args.base_url, transport=transport, timeout=args.timeout)
+        print(f"{'PASS' if r.ok else 'FAIL'}  {m.id}: {r.detail}")
+        if r.unreachable:
+            print(
+                f"steproute: cannot reach {args.base_url}; is Ollama running? "
+                "(stopping; nothing was concluded about the remaining models)",
+                file=sys.stderr,
+            )
+            return 3
+        if not r.ok:
+            failed += 1
+            print(
+                f'      set tools = false for "{m.id}" in the catalog '
+                "to exclude it from agent tasks"
+            )
+    return 1 if failed else 0
 
 
 def format_stats(s: StoreStats) -> str:
@@ -97,9 +197,10 @@ def _traces_export(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, transport: Transport | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args.transport = transport
     if args.command is None:
         parser.print_help()
         return 0

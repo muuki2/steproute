@@ -46,7 +46,26 @@ A routing choice. Frozen and hashable.
 | `cache_read_mult` | number | `1.0` | Prompt-cache read price as a multiple of `price_in`. |
 | `efforts` | array of string | `["medium"]` | Effort levels the model supports. |
 | `effort_output_mult` | object of number | `{}` | Output-token multiplier per effort level. |
-| `meta` | object | `{}` | Free-form extras. |
+| `meta` | object | `{}` | Free-form extras. Documented keys are listed in `docs/CATALOG.md`. |
+| `tier` | integer | `0` | Cascade strength order across the whole pool; higher is stronger, ties allowed. An editable assumption, not a measurement. |
+| `tools` | boolean | `true` | `false` means the model failed the tool-call check and is excluded from agent tasks. |
+| `holdout` | boolean | `false` | Reserved for the cold-start experiment; never used for training or normal routing. |
+| `verified` | boolean | `false` | Price, cache multipliers, context window and effort levels were checked against provider docs. |
+| `price_tiers` | array of PriceTier | `[]` | Prompt-size price tiers. `price_in` / `price_out` apply up to and including the first threshold. |
+| `effort_map` | object of string | `{}` | Shared effort level to the provider's native reasoning value. A supported effort absent from the map means "send no reasoning parameter". |
+| `effort_change_keeps_cache` | boolean | `false` | Whether changing effort between two requests keeps the provider's prompt cache. |
+
+`ModelProfile.prices_for(prompt_tokens)` returns the `(price_in, price_out)` in force. The prompt length counts all input tokens, cache reads and writes included, and a request over a threshold pays the higher rate on the whole request. Exactly the threshold is still the lower tier.
+
+## PriceTier
+
+One prompt-size price tier of a `ModelProfile`.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `above_tokens` | integer | required | Prompt-token threshold; the tier applies to prompts strictly longer than this. |
+| `price_in` | number | required | USD per million input tokens above the threshold. |
+| `price_out` | number | required | USD per million output tokens above the threshold. |
 
 ## StepState
 
