@@ -106,6 +106,7 @@ def test_stats_snapshot(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     combos = [("haiku", "low"), ("haiku", "low"), ("opus", "high"), ("opus", "high")]
     for i, (m, e) in enumerate(combos):
         store.log_decision(_dec(f"d{i}", m, e))
+    store.log_outcome(_out("d0", False, 0.01))
     store.log_outcome(_out("d0", True, 0.01))
     store.log_outcome(_out("d1", False, 0.0125))
     store.log_outcome(_out("d2", True))
@@ -127,3 +128,15 @@ def test_stats_empty_missing_and_bad_path(
     f.write_text("x")
     assert main(["traces", "stats", str(f)]) != 0
     assert capsys.readouterr().err.count("\n") == 1
+
+
+def test_cost_counts_last_outcome_only(tmp_path: Path) -> None:
+    from steproute.core.store import compute_stats
+
+    store = TraceStore(tmp_path, clock=lambda: 0.0)
+    store.log_decision(_dec("a"))
+    store.log_outcome(_out("a", None, 0.5))
+    store.log_outcome(_out("a", True, 0.5))
+    st = compute_stats(store)
+    assert st.total_cost_usd == 0.5
+    assert (st.outcomes, st.superseded_outcomes, st.outcomes_without_cost) == (2, 1, 0)

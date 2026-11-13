@@ -39,6 +39,7 @@ def format_stats(s: StoreStats) -> str:
         f"skipped lines: {s.skipped_lines}",
         f"total cost: ${s.total_cost_usd:.4f}",
         f"outcomes without cost: {s.outcomes_without_cost}",
+        f"superseded outcomes: {s.superseded_outcomes}",
         "success rate by first action (model, effort):",
     ]
     if not s.success:

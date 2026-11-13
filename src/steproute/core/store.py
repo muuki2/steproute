@@ -157,6 +157,7 @@ class StoreStats:
     skipped_lines: int = 0
     total_cost_usd: float = 0.0
     outcomes_without_cost: int = 0
+    superseded_outcomes: int = 0
     #: (model, effort) -> (successes, counted outcomes), sorted by key.
     success: dict[tuple[str, str], tuple[int, int]] = field(default_factory=dict)
 
@@ -166,11 +167,16 @@ class StoreStats:
 
 
 def compute_stats(store: TraceStore) -> StoreStats:
-    """Summarise a store. Cost sums every outcome record read (including superseded ones)."""
+    """Summarise a store.
+
+    ``outcomes`` counts every outcome record read. Cost figures use only the last outcome per
+    ``decision_id`` (orphans included, once each), so repeated reports do not double-count
+    spend; ``superseded_outcomes`` is the number of records replaced by a later one.
+    """
     decisions, outcomes, all_outcomes = store._collect()
     cost = 0.0
     no_cost = 0
-    for o in all_outcomes:
+    for o in outcomes.values():
         if o.cost_usd is None:
             no_cost += 1
         else:
@@ -194,5 +200,6 @@ def compute_stats(store: TraceStore) -> StoreStats:
         skipped_lines=store.skipped_lines,
         total_cost_usd=cost,
         outcomes_without_cost=no_cost,
+        superseded_outcomes=len(all_outcomes) - len(outcomes),
         success={k: (v[0], v[1]) for k, v in sorted(tally.items())},
     )
