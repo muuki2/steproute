@@ -9,9 +9,9 @@ from steproute.core.catalog import load_default_catalog
 catalog = load_default_catalog()
 
 policy = ScoredPolicy(predictor, catalog, tau=0.9, epsilon=0.05, seed=1)
-decision = policy.decide(state)      # the caller logs it: store.log_decision(decision)
+decision = policy.decide(state)  # the caller logs it: store.log_decision(decision)
 ...
-policy.report(outcome)               # the caller logs it too: store.log_outcome(outcome)
+policy.report(outcome)  # the caller logs it too: store.log_outcome(outcome)
 ```
 
 The policy never writes to the trace store. It returns a `Decision`; the caller logs it.
