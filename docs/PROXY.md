@@ -81,7 +81,6 @@ provider = "openai"         # Ollama's OpenAI-compatible endpoint, not LiteLLM's
 base_url = "http://127.0.0.1:11434/v1"
 local = true                # requires a loopback base_url
 models = ["qwen3.5:9b", "gpt-oss:20b", "qwen3-coder:30b"]
-reasoning_values = { "true" = "medium", "false" = "none" }   # catalog think values -> /v1 values
 cache_ttl_s = 300           # Ollama keep_alive default
 
 [[upstream]]
@@ -91,7 +90,8 @@ api_key_env = "ANTHROPIC_API_KEY"
 models = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"]
 drop_params = ["temperature", "top_p", "top_k"]
 forced_tool_choice = "auto"
-cache_ttl_s = 300
+cache_breakpoints = "route" # the default for anthropic; "always" also marks shadow requests
+cache_ttl_s = 300           # must not exceed 300 while breakpoints are on (5-minute cache)
 
 [[upstream]]
 name = "deepseek"
@@ -112,10 +112,11 @@ cache_ttl_s = 3600
 | `api_key_env` | none | Name of the variable holding the key. Without it the proxy sends a placeholder, which is fine for Ollama. |
 | `local` | `false` | The upstream runs on this machine. It must have a loopback `base_url`, and only a local upstream may serve a catalog model with `local = true`. Sensitive steps go only to local upstreams. |
 | `model_names` | `{}` | Catalog id to the name the upstream expects. |
-| `reasoning_values` | `{}` | Translates a catalog `effort_map` value into the value sent as `reasoning_effort`. |
+| `reasoning_values` | `{}` | Translates a catalog `effort_map` value into the value sent as `reasoning_effort`, for a server that names levels differently. The default catalog needs none: its values are the ones each upstream's endpoint accepts. |
 | `drop_params` | `[]` | Request fields removed in route mode. |
 | `forced_tool_choice` | `keep` | `auto` turns `tool_choice: "required"` or a named tool into `"auto"` in route mode. |
-| `cache_ttl_s` | 300 | After this many seconds without a call, the cached prefix is assumed gone. |
+| `cache_ttl_s` | 300 | After this many seconds without a call, the cached prefix is assumed gone. With `cache_breakpoints` on it may not exceed 300, the lifetime the proxy requests. |
+| `cache_breakpoints` | `route` for `anthropic`, else `off` | Where the proxy adds Anthropic prompt-cache breakpoints: `route` (requests it rewrites), `always` (also shadow, fail-open and client-fallback requests), `off`. Only `provider = "anthropic"` may set it; DeepSeek and Ollama cache without markers. See decision 10. |
 | `timeout_s` | 600 | Per-call timeout. |
 
 Startup checks: every served model is in the catalog, and `local_fallback` is served and local. A non-holdout catalog model that no upstream serves produces a warning: if the policy picks it, that cascade step is skipped (signal `skipped: ["no_upstream"]`).
@@ -162,6 +163,7 @@ Per request (route mode), one `Decision` written by the service, then one `Outco
 - `Outcome.signals`:
   - `proxy_mode` and `attempts`;
   - `failed_checks`, `upstream_errors`, `skipped`, `params_dropped`, `stream`, `stream_error`, `client_disconnected` and `fallback_to_client`, when they apply;
+  - `cache_markers`: `"proxy"` or `"client"`, who placed the Anthropic cache breakpoints on the final attempt (absent when it had none);
   - the label signals of the final answer (below);
   - `retried = true`, added later to the previous step's outcome when the client re-sends an identical request.
 
@@ -205,7 +207,7 @@ A request is split into **units**: unit 0 is the tool definitions, then one unit
   - If the new request extends the last executed prompt (all its units are a prefix), the cached prefix is `cached_tokens`.
   - If it diverges after `k` units (history edited or compacted), the cached prefix is the character share of the common prefix times the old prompt size.
   - If the tools changed, or the TTL passed, it is 0.
-- **After a call that returned usage** (whether or not the answer passed its check): the owner becomes that attempt's `(model, effort)` and `cached_tokens` becomes the real prompt size. This is `state_after_failure` with measured numbers. A failed cascade step therefore leaves the cache owned by the failed model, which is what the next step pays for.
+- **After a call that returned usage** (whether or not the answer passed its check): the owner becomes that attempt's `(model, effort)` and `cached_tokens` becomes the real prompt size, or 0 for an Anthropic request that carried no cache breakpoint (Anthropic caches nothing then; decision 10). This is `state_after_failure` with measured numbers. A failed cascade step therefore leaves the cache owned by the failed model, which is what the next step pays for.
 - **After a call that failed with no response** (an HTTP error or no connection): the provider did nothing, so the session is unchanged.
 - **Shadow and fail-open calls** own the cache as `(client model, client effort)`, or `None` if the client sent no effort in the shared vocabulary.
 
@@ -263,7 +265,9 @@ A request written for one model is kept valid on another by a per-upstream **par
 - the upstream's `drop_params` are removed;
 - `forced_tool_choice = "auto"` downgrades a forced tool choice.
 
-Every change is listed in `signals.params_dropped`. Shadow mode and fail-open send the client's parameters unchanged.
+Every change is listed in `signals.params_dropped`. Shadow mode and fail-open send the client's parameters unchanged (cache breakpoints aside, decision 10).
+
+The catalog's `effort_map` values are the ones each upstream's endpoint accepts, so no `reasoning_values` is needed with the default catalog. For `qwen3.5:9b` they are `none` and `medium` for Ollama's `/v1` endpoint (`docs/INTEGRATION-NOTES.md` section 9).
 
 What LiteLLM 1.109.1 does on its own is checked in `docs/INTEGRATION-NOTES.md` section 8:
 
@@ -284,7 +288,7 @@ The proxy does not set LiteLLM's global `drop_params`, which silently drops many
 
 ### 7. Shadow mode
 
-The client's request runs unchanged on its own model, and the router's decision is logged with `features.proxy.mode = "shadow"`. The outcome of the call that ran is reported under the id `shadow:<decision id>`, which is also the `X-Steproute-Decision-Id` the client gets for late reports.
+The client's request runs unchanged on its own model, and the router's decision is logged with `features.proxy.mode = "shadow"`. Unchanged includes cache breakpoints: an Anthropic upstream adds none in shadow mode unless it sets `cache_breakpoints = "always"` (decision 10). The outcome of the call that ran is reported under the id `shadow:<decision id>`, which is also the `X-Steproute-Decision-Id` the client gets for late reports.
 
 No decision has that id. So joins (`TraceStore.joined`, `compute_stats` success tables, training and off-policy evaluation) leave the recommendation unjoined and never pair the client model's result with the router's action. A learning policy's `report` ignores the unknown id. The spend is still real and is counted in the store's totals, as an orphan outcome. Exports withhold orphans, so shadow outcomes never leave the machine.
 
@@ -333,6 +337,41 @@ This is checked by two tests:
 
 Details and line references are in `docs/INTEGRATION-NOTES.md` section 8.
 
+### 10. Prompt-cache breakpoints (Anthropic)
+
+Anthropic caches a prompt only up to a `cache_control` breakpoint. Without one, every step pays the full input price, and the cost model's warm prompt (the cached prefix read, the remainder written; `docs/COST-MODEL.md`) never happens. DeepSeek and Ollama cache matching prefixes on their own and take no markers. So for an Anthropic upstream the proxy adds breakpoints itself, and the session state believes exactly what it asked for. What LiteLLM does with each marker, with line references, is in `docs/INTEGRATION-NOTES.md` section 9.
+
+**Placement.** Two breakpoints of the four Anthropic allows, the same two on every step:
+
+1. **The static prefix:** `cache_control: {"type": "ephemeral"}` on the last text block of the leading system messages. Tools render before the system prompt, so this caches tools and system together. Without a system prompt it goes on the last tool definition. This read point survives anything that happens later in the conversation: an edited or compacted history still reads tools and system.
+2. **The moving end:** Anthropic's request-level automatic breakpoint, a top-level `cache_control: {"type": "ephemeral"}`. Anthropic puts it on the last cacheable block and walks back from a block that cannot carry one. Step `n` writes the whole prompt; step `n + 1` sends that prompt byte for byte plus the new messages, its breakpoint looks back, finds step `n`'s entry and reads it, and the new messages are written. This is exactly the convention the session state and the cost model use.
+
+The proxy never changes the bytes of the conversation to place a marker: a string system prompt gets a message-level marker, which LiteLLM copies onto the block it builds, so the rendered prefix is the same on every step. A mid-conversation `role: "system"` message is not part of the static prefix and is not marked.
+
+*Rejected:*
+
+- **A marker on the last message, placed by the proxy.** It has to work for every message shape (string, parts, a tool result, an assistant turn ending in tool calls), and the automatic breakpoint already does it, including walking back from blocks that cannot be marked.
+- **A third marker at the end of the previous step's prompt**, to survive the 20-block lookback. A proxied agent loop adds two or three positions per step, far below 20; the extra marker would only help a client that calls the model many times without the proxy (see Limitations).
+- **LiteLLM's injection (`cache_control_injection_points`, or `litellm.enable_anthropic_prompt_caching`).** It does nearly the same placement, but global or hidden: the proxy could not tell from the request it built whether markers would be sent. The loader forces the global flag off, so the environment variable `LITELLM_ENABLE_ANTHROPIC_PROMPT_CACHING` cannot inject markers behind the proxy's back either.
+
+**Config.** `cache_breakpoints` per upstream: `route` (the default for `provider = "anthropic"`), `always`, or `off`. Any other provider may only leave it out or set `off`: DeepSeek and Ollama cache automatically, and a marker there would be noise.
+
+**The client's own markers win.** If the request already carries a `cache_control` anywhere (a message, a content block, a tool), the proxy adds nothing and sends the markers as they are. Adding to them could exceed the four-breakpoint limit, put a 5-minute entry after a 1-hour one (a 400), or move the point the client chose. The outcome records `cache_markers = "client"`.
+
+**Shadow mode.** Shadow mode promises not to change the request. A marker changes billing and caching but not the answer; still, the conservative default is to keep the promise: with `route`, shadow, fail-open and client-fallback requests go out unmarked, exactly as the client sent them, and the session records that nothing is cached (`cached_tokens = 0`). `always` marks them too, for a user who wants shadow mode to cost what route mode would. *Rejected:* marking shadow requests by default, which silently changes a client's bill (a 1.25x write on every step it did not ask for).
+
+**Lifetime.** The proxy requests the default 5-minute entry (no `ttl`), which is what the catalog prices (`cache_write_mult = 1.25`) and what `cache_ttl_s = 300` assumes; the lifetime is refreshed on every read, and so is the session's timer. While breakpoints are on, a `cache_ttl_s` above 300 is a configuration error: the proxy would believe in a cache that has expired. A lower value is allowed (conservative). *Rejected:* requesting the 1-hour lifetime, which writes at 2x; the catalog has that rate only in `meta`, and nothing prices it yet.
+
+**What Anthropic receives** (tested in `tests/test_proxy_anthropic.py` through LiteLLM's real `anthropic` provider):
+
+```
+"system": [{"type": "text", "text": "<system prompt>", "cache_control": {"type": "ephemeral"}}],
+"tools": [... unmarked ...],
+"messages": [... unmarked, step n's messages a prefix of step n+1's ...],
+"cache_control": {"type": "ephemeral"},
+"output_config": {"effort": "<decision effort>"}, "thinking": {"type": "adaptive", ...}
+```
+
 ## Streaming
 
 A streaming request gets **one attempt with a logged outcome and no check cascade**. The cascade needs the whole response, and unbuffered streaming forbids holding it (the conflict noted in `docs/INTEGRATION-NOTES.md`, issue 12 item 3).
@@ -368,10 +407,11 @@ Opt-in; CI skips it. It runs two steps through the proxy against a real local Ol
 
 - **The prompt estimate is an estimate** until the first call of a session calibrates it. Image tokens are a flat 1000 per image.
 - **One cache owner per session.** A provider may still hold an older model's cache (Anthropic keeps it per model for 5 minutes), so switching back can be cheaper than the cost model thinks.
-- **Cache placement.** The proxy does not add `cache_control` breakpoints for Anthropic. The cost model assumes a breakpoint at the end of the prompt (`docs/COST-MODEL.md`), so a client that sets none pays less than predicted and caches nothing. LiteLLM's `cache_control_injection_points` could do it; it is not wired in yet.
+- **Client cache markers.** When the client places its own `cache_control` markers, the proxy adds none and still assumes the whole prompt is cached afterwards, which holds only if the client's last marker is at the end. A client marker asking for the 1-hour lifetime is priced at the catalog's 5-minute write rate.
+- **The 20-block lookback.** The moving breakpoint finds the previous step's entry only within 20 content positions. A single step that appends more than 20 (a long sequential tool loop that never passes through the proxy) misses, and the step pays a full write the session state did not predict.
 - **The fallback session id** merges two sessions that open with identical messages, and changes when the proxy restarts (random salt) unless `salt_env` is set. Send `X-Steproute-Session`.
 - **Concurrent requests in one session** each get a step index, but their cache estimates read the state as it was when they started.
 - **Nothing is logged** for a request without a decision (source down, no fallback), and `/report` only merges into outcomes this process emitted.
 - **Rewriting is per request.** The proxy does not use Anthropic's per-message effort beta, so an effort change on Claude is treated as a cache miss (`effort_change_keeps_cache = false`).
 - **Only the first choice** (`n = 1`) is checked.
-- **No live provider has been called.** Every behaviour above is tested against the loopback mock. The Anthropic and DeepSeek paths rest on LiteLLM's code at the pinned tag (`docs/INTEGRATION-NOTES.md` section 8) until a separately approved run.
+- **No live provider has been called.** Every behaviour above is tested against the loopback mocks. The Anthropic path runs through LiteLLM's real `anthropic` provider against an Anthropic Messages-format mock (`tests/test_proxy_anthropic.py`), so the request shape and the usage mapping are exercised, but Anthropic's actual caching behaviour rests on its documentation. The DeepSeek path rests on LiteLLM's code at the pinned tag (`docs/INTEGRATION-NOTES.md` sections 8 and 9) until a separately approved run.

@@ -186,13 +186,18 @@ tier = 1
 local = true
 efforts = ["none", "medium"]
 effort_output_mult = { none = 1.0, medium = 1.0 }
-effort_map = { none = "false", medium = "true" }
+# Values for Ollama's OpenAI-compatible /v1 endpoint (`reasoning_effort`), which the proxy uses.
+# Verified from Ollama's source at v0.40.16, not by a run (Ollama was not run here): "none"
+# sets think=false and "medium" turns thinking on, with or without the model's thinking
+# metadata (meta.effort_map_evidence). The native API's true/false are NOT valid here.
+effort_map = { none = "none", medium = "medium" }
 verified = true
 
 [model.meta]
 native_context = 262144
 size_gb = 6.6
 reasoning_control = "think on or off"
+effort_map_evidence = "Ollama v0.40.16 source and docs, not a run: openai/openai.go:587-618, model/renderers/qwen35.go:363-368, types/model/thinking.go:100-115, docs/api/openai-compatibility.mdx:253"
 source = "https://ollama.com/library/qwen3.5:9b"
 checked = "2026-11-13"
 

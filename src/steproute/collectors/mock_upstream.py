@@ -7,6 +7,13 @@ rewritten model, the reasoning parameter, the dropped sampling parameters.
 
 Supported: ``POST /v1/chat/completions`` (non-streaming JSON and SSE streaming, with a final
 usage chunk when ``stream_options.include_usage`` is set) and ``GET /v1/models``.
+
+The same server also speaks Anthropic's Messages API on ``POST /v1/messages``, well enough
+for LiteLLM's ``anthropic`` provider (point it at ``anthropic_base_url``): non-streaming JSON
+and SSE streaming (``message_start`` ... ``message_stop``), Anthropic error bodies, and usage
+with ``cache_read_input_tokens`` (``Reply.cached_tokens``) and ``cache_creation_input_tokens``
+(``Reply.cache_write_tokens``) reported apart from ``input_tokens``, as Anthropic does. The
+mock does not cache anything itself: the counts are what the test scripts.
 """
 
 from __future__ import annotations
@@ -44,6 +51,9 @@ class Reply:
     prompt_tokens: int = 100
     completion_tokens: int = 10
     cached_tokens: int | None = None
+    #: Anthropic only: tokens written to the cache. ``prompt_tokens`` is the whole prompt, so
+    #: the Messages response reports ``input_tokens = prompt_tokens - cached - written``.
+    cache_write_tokens: int = 0
     #: Seconds to sleep between streamed chunks (to prove chunks arrive one by one).
     chunk_delay: float = 0.0
     #: Number of content pieces a streamed text reply is split into.
@@ -109,6 +119,8 @@ class _Handler(BaseHTTPRequestHandler):
                 Received(self.path, {k.lower(): v for k, v in self.headers.items()}, body)
             )
             reply = st.script.popleft() if st.script else st.default
+        if self.path.rstrip("/").endswith("/v1/messages"):
+            return self._anthropic(reply, body)
         if not self.path.rstrip("/").endswith("/chat/completions"):
             return self._json(404, {"error": {"message": "not found"}})
         if reply.kind == "error":
@@ -191,6 +203,153 @@ class _Handler(BaseHTTPRequestHandler):
             send({**base, "choices": [], "usage": _usage(reply)})
         send("[DONE]")
 
+    # --- Anthropic Messages API ---
+
+    def _anthropic(self, reply: Reply, body: dict[str, Any]) -> None:
+        if reply.kind == "error":
+            kind = {400: "invalid_request_error", 429: "rate_limit_error"}.get(
+                reply.status, "api_error"
+            )
+            return self._json(
+                reply.status,
+                {"type": "error", "error": {"type": kind, "message": "scripted failure"}},
+            )
+        model = str(body.get("model", "mock"))
+        content, stop = _anthropic_content(reply)
+        usage = _anthropic_usage(reply)
+        if body.get("stream"):
+            return self._anthropic_stream(reply, model, content, stop, usage)
+        self._json(
+            200,
+            {
+                "id": "msg_mock",
+                "type": "message",
+                "role": "assistant",
+                "model": model,
+                "content": content,
+                "stop_reason": stop,
+                "stop_sequence": None,
+                "usage": usage,
+            },
+        )
+
+    def _anthropic_stream(
+        self,
+        reply: Reply,
+        model: str,
+        content: list[dict[str, Any]],
+        stop: str,
+        usage: dict[str, Any],
+    ) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+        def send(event: str, data: dict[str, Any]) -> None:
+            self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
+            self.wfile.flush()
+            if reply.chunk_delay:
+                time.sleep(reply.chunk_delay)
+
+        start_usage = {**usage, "output_tokens": 0}
+        send(
+            "message_start",
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_mock",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": model,
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": start_usage,
+                },
+            },
+        )
+        for index, block in enumerate(content):
+            if block["type"] == "tool_use":
+                send(
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": index,
+                        "content_block": {**block, "input": {}},
+                    },
+                )
+                send(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": index,
+                        "delta": {"type": "input_json_delta", "partial_json": reply.tool_args},
+                    },
+                )
+            else:
+                send(
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": index,
+                        "content_block": {"type": "text", "text": ""},
+                    },
+                )
+                text = block["text"]
+                n = max(1, reply.pieces)
+                step = max(1, -(-len(text) // n)) if text else 1
+                for i in range(0, len(text), step):
+                    send(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": index,
+                            "delta": {"type": "text_delta", "text": text[i : i + step]},
+                        },
+                    )
+            send("content_block_stop", {"type": "content_block_stop", "index": index})
+        send(
+            "message_delta",
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": stop, "stop_sequence": None},
+                "usage": {"output_tokens": usage["output_tokens"]},
+            },
+        )
+        send("message_stop", {"type": "message_stop"})
+
+
+def _anthropic_content(reply: Reply) -> tuple[list[dict[str, Any]], str]:
+    if reply.kind == "tool":
+        try:
+            args = json.loads(reply.tool_args)
+        except ValueError:
+            args = {}
+        return (
+            [{"type": "tool_use", "id": "toolu_mock_1", "name": reply.tool_name, "input": args}],
+            "tool_use",
+        )
+    if reply.kind == "empty":
+        return [], "end_turn"
+    if reply.kind == "refusal":
+        return [], "refusal"
+    return [{"type": "text", "text": reply.content}], "end_turn"
+
+
+def _anthropic_usage(reply: Reply) -> dict[str, Any]:
+    read = reply.cached_tokens or 0
+    write = reply.cache_write_tokens
+    return {
+        "input_tokens": max(0, reply.prompt_tokens - read - write),
+        "cache_read_input_tokens": read,
+        "cache_creation_input_tokens": write,
+        "cache_creation": {"ephemeral_5m_input_tokens": write, "ephemeral_1h_input_tokens": 0},
+        "output_tokens": reply.completion_tokens,
+    }
+
 
 def _message(reply: Reply) -> tuple[dict[str, Any], str]:
     if reply.kind == "tool":
@@ -240,6 +399,11 @@ class MockUpstream:
     def base_url(self) -> str:
         return f"http://127.0.0.1:{self._server.server_address[1]}/v1"
 
+    @property
+    def anthropic_base_url(self) -> str:
+        """The ``api_base`` for LiteLLM's ``anthropic`` provider, which appends ``/v1/messages``."""
+        return f"http://127.0.0.1:{self._server.server_address[1]}"
+
     def start(self) -> MockUpstream:
         self._thread.start()
         return self
@@ -270,6 +434,10 @@ class MockUpstream:
 
     def chat_bodies(self) -> list[dict[str, Any]]:
         return [r.body for r in self.received if r.path.rstrip("/").endswith("/chat/completions")]
+
+    def messages_bodies(self) -> list[dict[str, Any]]:
+        """The raw Anthropic Messages requests received, in order."""
+        return [r.body for r in self.received if r.path.rstrip("/").endswith("/v1/messages")]
 
     def clear(self) -> None:
         with self._state.lock:

@@ -18,6 +18,8 @@ from urllib.parse import urlsplit
 from steproute.core.catalog import Catalog
 
 __all__ = [
+    "ANTHROPIC_CACHE_TTL_S",
+    "CACHE_BREAKPOINTS",
     "CheckConfig",
     "MODES",
     "PROVIDERS",
@@ -38,6 +40,13 @@ PROVIDERS = ("openai", "anthropic", "deepseek")
 SOURCES = ("inprocess", "http")
 TASK_TEXT = ("none", "last_user")
 FORCED_TOOL_CHOICE = ("keep", "auto")
+#: ``cache_breakpoints``: ``route`` marks the requests the proxy rewrites, ``always`` also the
+#: ones it promises to forward unchanged (shadow mode, fail-open, the client fallback), ``off``
+#: none. Only Anthropic takes markers; DeepSeek and Ollama cache automatically.
+CACHE_BREAKPOINTS = ("route", "always", "off")
+#: The cache lifetime the proxy requests from Anthropic: the default 5-minute ``ephemeral``
+#: entry. ``cache_ttl_s`` may not assume longer while the proxy places breakpoints.
+ANTHROPIC_CACHE_TTL_S = 300.0
 ON_UPSTREAM_ERROR = ("client_model", "error")
 
 DEFAULT_PORT = 8788
@@ -133,9 +142,8 @@ class UpstreamConfig:
     local: bool = False
     #: catalog id -> the model name the upstream expects (default: the catalog id).
     model_names: Mapping[str, str] = field(default_factory=dict)
-    #: The catalog's ``effort_map`` value -> the value sent as ``reasoning_effort``. For
-    #: Ollama ``/v1`` the catalog's ``"true"``/``"false"`` (native ``think``) must become
-    #: ``"medium"``/``"none"``.
+    #: The catalog's ``effort_map`` value -> the value sent as ``reasoning_effort``, for a server
+    #: that names levels differently from the catalog. The default catalog needs none.
     reasoning_values: Mapping[str, str] = field(default_factory=dict)
     #: Request fields removed before the call (for example sampling parameters that current
     #: Claude models reject with a 400).
@@ -144,6 +152,32 @@ class UpstreamConfig:
     forced_tool_choice: str = "keep"
     cache_ttl_s: float = 300.0
     timeout_s: float = 600.0
+    #: Where the proxy puts Anthropic prompt-cache breakpoints (``CACHE_BREAKPOINTS``).
+    #: ``None`` resolves to ``route`` for ``provider = "anthropic"`` and ``off`` otherwise.
+    cache_breakpoints: str | None = None
+
+    def __post_init__(self) -> None:
+        where = f"upstream {self.name!r}"
+        mode = self.cache_breakpoints
+        if mode is None:
+            mode = "route" if self.provider == "anthropic" else "off"
+            object.__setattr__(self, "cache_breakpoints", mode)
+        if mode not in CACHE_BREAKPOINTS:
+            raise ProxyConfigError(f"{where}: cache_breakpoints must be one of {CACHE_BREAKPOINTS}")
+        if mode != "off" and self.provider != "anthropic":
+            raise ProxyConfigError(
+                f"{where}: cache_breakpoints is only for provider 'anthropic'; "
+                f"{self.provider!r} upstreams cache automatically, set it to 'off' or leave it out"
+            )
+        if mode != "off" and self.cache_ttl_s > ANTHROPIC_CACHE_TTL_S:
+            raise ProxyConfigError(
+                f"{where}: cache_ttl_s is {self.cache_ttl_s:g} but the proxy requests Anthropic's "
+                f"5-minute cache; use cache_ttl_s <= {ANTHROPIC_CACHE_TTL_S:g}"
+            )
+
+    def marks_cache(self, rewrite: bool) -> bool:
+        """Whether the proxy adds cache breakpoints to a request (rewritten or not)."""
+        return self.cache_breakpoints == "always" or (self.cache_breakpoints == "route" and rewrite)
 
     def upstream_model(self, catalog_id: str) -> str:
         return self.model_names.get(catalog_id, catalog_id)
@@ -328,6 +362,7 @@ _UPSTREAM_KEYS: dict[str, str] = {
     "forced_tool_choice": "str",
     "cache_ttl_s": "num",
     "timeout_s": "num",
+    "cache_breakpoints": "str",
 }
 
 
