@@ -1,0 +1,12 @@
+{
+  "name": "steproute",
+  "owner": { "name": "steproute maintainers" },
+  "description": "The steproute Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "steproute",
+      "source": "./plugins/claude-code",
+      "description": "Logs a steproute routing decision and its outcome for every subagent spawn; shadow mode by default."
+    }
+  ]
+}

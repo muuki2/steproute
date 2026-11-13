@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "steproute": {
+      "command": "steproute",
+      "args": ["mcp", "--harness", "claude-code-mcp"]
+    }
+  }
+}

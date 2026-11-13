@@ -1,0 +1,11 @@
+# Rule baseline for the Claude Code plugin's service (docs/RULES.md). Keys left out keep the
+# shipped defaults (steproute/catalogs/rules.toml).
+
+[cascade]
+# A decision's fallback step cannot be run: nothing can transparently retry a subagent.
+# Decisions therefore carry a single step, so what is logged is what can be executed.
+enabled = false
+
+[models]
+# The catalog holds Anthropic models only ([catalog] providers in steproute.toml).
+provider_order = ["anthropic"]
