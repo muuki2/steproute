@@ -1,0 +1,1465 @@
+{
+  "format": "steproute-eval-report",
+  "metrics_version": "1",
+  "steproute_version": "0.0.1",
+  "generated_at": 1794606301.991441,
+  "command": [
+    "steproute",
+    "ml",
+    "evaluate",
+    "..."
+  ],
+  "settings": {
+    "confidence": 0.95,
+    "bootstrap_replicates": 2000,
+    "seed": 0,
+    "min_ess": 50.0,
+    "min_clusters": 100,
+    "clip": null,
+    "headline_estimator": "dr",
+    "crossfit_folds": 5,
+    "support_tolerance": 0.001,
+    "cost_weight": null,
+    "min_margin": 0.0
+  },
+  "definitions": {
+    "unit": "A task on the grid; a logged step for off-policy estimates.",
+    "success_rate": "Mean success over units. Unlabelled outcomes are excluded from the headline and bounded in the 'unlabelled_sensitivity' diagnostic; they are never failures.",
+    "cost_per_task": "Mean realized cost in USD per task, failures included.",
+    "cost_per_step": "Mean realized cost in USD per logged step, failures included.",
+    "cost_per_solved": "Total spend divided by units solved (mean cost / success rate), so failed attempts are paid for. Null when nothing is solved; an unbounded interval is flagged.",
+    "quality_retention": "Success rate divided by that of the strongest single configuration (highest success, then cheapest) on the same units. Not capped: above 1 means the policy solves more than the strongest configuration.",
+    "strongest_solved_retained": "Grid only: of the tasks the strongest configuration solves, the share the policy also solves (at most 1).",
+    "switches_per_task": "Grid: expected model changes between cascade attempts within a task (0 for a single configuration).",
+    "config_changes_per_task": "Grid: expected (model, effort) changes between attempts.",
+    "switch_rate_per_step": "Logged: probability that the policy's first step uses a model other than the state's cache owner, averaged over logged states.",
+    "added_latency_p50_ms": "Grid: median over tasks of the latency of cascade attempts before the one that produced the result (routing-decision time is not in the data). Null on logged data.",
+    "added_latency_p95_ms": "As added_latency_p50_ms, the 95th percentile (lower quantile).",
+    "total_latency_p50_ms": "Grid: median end-to-end latency of the policy's runs per task.",
+    "total_latency_p95_ms": "Grid: 95th percentile end-to-end latency per task.",
+    "frontier_margin": "Success rate minus the frontier's success rate at the policy's spend, in success-rate units. The frontier is the upper concave envelope of every single configuration's (spend, success) point and the origin.",
+    "cost_saving_at_equal_success": "Grid: the frontier's least spend reaching the policy's success rate, minus the policy's spend (USD per task). Null and flagged when no configuration reaches it.",
+    "utility": "success_rate - cost_weight * cost, only when a cost weight is given.",
+    "verdict": "beats_frontier when the margin's interval lies above 0; does_not_beat when it lies at or below 0 (a tie does not beat); not_shown otherwise, or when the data cannot support a verdict (reasons listed).",
+    "interval": "Percentile cluster bootstrap at the stated confidence: whole tasks (or sessions without a task id) are resampled, paired across policies and configurations.",
+    "ess": "Kish effective sample size of the importance weights, (sum w)^2 / sum w^2."
+  },
+  "verdicts": [
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "tabular tau=0.7",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether tabular tau=0.7 beats every single configuration; at $1.101 per task it succeeds on 80.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.4% (margin +3.2 points, 95% interval [-1.7, +8.6] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "tabular-uncalibrated tau=0.7",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether tabular-uncalibrated tau=0.7 beats every single configuration; at $1.101 per task it succeeds on 80.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.4% (margin +3.2 points, 95% interval [-1.7, +8.6] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "tabular tau=0.8",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular tau=0.8 beats every single configuration: at $1.364 per task it succeeds on 84.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.0% (margin +5.2 points, 95% interval [+1.4, +10.4] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "tabular-uncalibrated tau=0.8",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular-uncalibrated tau=0.8 beats every single configuration: at $1.364 per task it succeeds on 84.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.0% (margin +5.2 points, 95% interval [+1.4, +10.4] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "tabular tau=0.9",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular tau=0.9 beats every single configuration: at $1.618 per task it succeeds on 88.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 80.4% (margin +8.0 points, 95% interval [+5.2, +12.0] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "tabular-uncalibrated tau=0.9",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular-uncalibrated tau=0.9 beats every single configuration: at $1.618 per task it succeeds on 88.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 80.4% (margin +8.0 points, 95% interval [+5.2, +12.0] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "rules",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "oracle",
+      "hindsight": true,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+    }
+  ],
+  "summary": [
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether tabular tau=0.7 beats every single configuration; at $1.101 per task it succeeds on 80.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.4% (margin +3.2 points, 95% interval [-1.7, +8.6] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether tabular-uncalibrated tau=0.7 beats every single configuration; at $1.101 per task it succeeds on 80.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.4% (margin +3.2 points, 95% interval [-1.7, +8.6] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. tabular tau=0.8 beats every single configuration: at $1.364 per task it succeeds on 84.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.0% (margin +5.2 points, 95% interval [+1.4, +10.4] points).",
+    "SYNTHETIC DATA. NOT A RESULT. tabular-uncalibrated tau=0.8 beats every single configuration: at $1.364 per task it succeeds on 84.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.0% (margin +5.2 points, 95% interval [+1.4, +10.4] points).",
+    "SYNTHETIC DATA. NOT A RESULT. tabular tau=0.9 beats every single configuration: at $1.618 per task it succeeds on 88.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 80.4% (margin +8.0 points, 95% interval [+5.2, +12.0] points).",
+    "SYNTHETIC DATA. NOT A RESULT. tabular-uncalibrated tau=0.9 beats every single configuration: at $1.618 per task it succeeds on 88.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 80.4% (margin +8.0 points, 95% interval [+5.2, +12.0] points).",
+    "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points).",
+    "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+  ],
+  "evaluations": [
+    {
+      "kind": "grid",
+      "level": "task",
+      "scope": "Task-level, full-information evaluation on the replay grid. Each policy's decision at task start is applied to the whole task, as one configuration or a cascade of configurations. No run in the grid switches model within a task, so step-level routing, the switch tax and within-task switching are NOT measured here; they can only be estimated from logged traces with propensities.",
+      "provenance": {
+        "source": "grid.jsonl",
+        "sha256": "cee46f5b14daf2b1c2e5d35575430bbe9e36257c85467903afe290d4607bc90c",
+        "header": {
+          "format": "steproute-grid",
+          "generator": "steproute.eval.synthetic",
+          "seed": 0
+        },
+        "skipped_lines": 0,
+        "runs": 6000,
+        "unlabelled_runs": 0,
+        "uncosted_runs": 0,
+        "runs_without_latency": 0,
+        "tasks_total": 1000,
+        "split": "test",
+        "tasks_in_split": 190,
+        "configurations": [
+          "cloud-big (high)",
+          "cloud-big (medium)",
+          "cloud-mid (medium)",
+          "cloud-small (high)",
+          "cloud-small (low)",
+          "local-small (medium)"
+        ],
+        "excluded_configurations": [],
+        "tasks_evaluated": 190,
+        "tasks_excluded": 0,
+        "tasks_excluded_by_reason": {
+          "missing_run": 0,
+          "unlabelled_run": 0,
+          "uncosted_run": 0
+        },
+        "incomplete_cells_by_configuration": {},
+        "model": {
+          "data_fingerprint": "fb8f9faaa41067992eca579ab24006b96ee49136f324abf58e12a79827b3499d",
+          "seed": 0,
+          "n_probes_used": 50,
+          "calibration": "none",
+          "roles": {
+            "probe": 50,
+            "train": 523,
+            "tune": 95,
+            "calibration": 142,
+            "test": 190,
+            "excluded": 0
+          },
+          "synthetic": true
+        }
+      },
+      "frontier": {
+        "definition": "upper concave envelope of the single-configuration points and the origin (declining a unit); flat beyond the configuration with the highest success",
+        "configurations": [
+          {
+            "label": "cloud-big (high)",
+            "success_rate": {
+              "value": 0.8368421053,
+              "ci": [
+                0.7736842105,
+                0.8842105263
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 2.2029330063,
+              "ci": [
+                1.9478820606,
+                2.4685797882
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-big (medium)",
+            "success_rate": {
+              "value": 0.7894736842,
+              "ci": [
+                0.7263157895,
+                0.8421052632
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 1.3507221686,
+              "ci": [
+                1.1916586162,
+                1.5454577171
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-mid (medium)",
+            "success_rate": {
+              "value": 0.7263157895,
+              "ci": [
+                0.6631578947,
+                0.7894736842
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.3519021376,
+              "ci": [
+                0.3137536635,
+                0.3983516164
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-small (high)",
+            "success_rate": {
+              "value": 0.6421052632,
+              "ci": [
+                0.5736842105,
+                0.7105263158
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.1037549055,
+              "ci": [
+                0.0915056435,
+                0.1189585465
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-small (low)",
+            "success_rate": {
+              "value": 0.5263157895,
+              "ci": [
+                0.4578947368,
+                0.6
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.0456473875,
+              "ci": [
+                0.0401931597,
+                0.051826473
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "local-small (medium)",
+            "success_rate": {
+              "value": 0.4684210526,
+              "ci": [
+                0.4,
+                0.5421052632
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            }
+          }
+        ],
+        "envelope": [
+          {
+            "label": "local-small (medium)",
+            "cost": 0.0,
+            "success_rate": 0.4684210526
+          },
+          {
+            "label": "cloud-small (high)",
+            "cost": 0.1037549055,
+            "success_rate": 0.6421052632
+          },
+          {
+            "label": "cloud-mid (medium)",
+            "cost": 0.3519021376,
+            "success_rate": 0.7263157895
+          },
+          {
+            "label": "cloud-big (medium)",
+            "cost": 1.3507221686,
+            "success_rate": 0.7894736842
+          },
+          {
+            "label": "cloud-big (high)",
+            "cost": 2.2029330063,
+            "success_rate": 0.8368421053
+          }
+        ],
+        "excluded": {}
+      },
+      "policies": [
+        {
+          "name": "tabular tau=0.7",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8052631579,
+              "ci": [
+                0.7473684211,
+                0.8578947368
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.1006317254,
+              "ci": [
+                0.7758852544,
+                1.5579479413
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.3667975675,
+              "ci": [
+                0.934367512,
+                2.0284930633
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.9622641509,
+              "ci": [
+                0.8958292562,
+                1.0324567436
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.8805031447,
+              "ci": [
+                0.8209876543,
+                0.925
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.3947368421,
+              "ci": [
+                0.3210526316,
+                0.4578947368
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.4894736842,
+              "ci": [
+                0.4157894737,
+                0.5578947368
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                1272.1560886661
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 4964.4312594283,
+              "ci": [
+                4473.1083389231,
+                6212.9180269203
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1862.602005777,
+              "ci": [
+                1355.7061526719,
+                2374.7787538183
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 9730.0738790157,
+              "ci": [
+                8154.9452634091,
+                10307.5659437288
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0316033194,
+              "ci": [
+                -0.0167895251,
+                0.0858676006
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.5341607224,
+              "ci": [
+                -0.2067734574,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether tabular tau=0.7 beats every single configuration; at $1.101 per task it succeeds on 80.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.4% (margin +3.2 points, 95% interval [-1.7, +8.6] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium) -> cloud-small (low)": 87.0,
+              "local-small (medium) -> cloud-small (high)": 44.0,
+              "cloud-big (medium) -> cloud-big (high)": 31.0,
+              "local-small (medium) -> cloud-mid (medium)": 28.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "tabular-uncalibrated tau=0.7",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8052631579,
+              "ci": [
+                0.7473684211,
+                0.8578947368
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.1006317254,
+              "ci": [
+                0.7758852544,
+                1.5579479413
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.3667975675,
+              "ci": [
+                0.934367512,
+                2.0284930633
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.9622641509,
+              "ci": [
+                0.8958292562,
+                1.0324567436
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.8805031447,
+              "ci": [
+                0.8209876543,
+                0.925
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.3947368421,
+              "ci": [
+                0.3210526316,
+                0.4578947368
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.4894736842,
+              "ci": [
+                0.4157894737,
+                0.5578947368
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                1272.1560886661
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 4964.4312594283,
+              "ci": [
+                4473.1083389231,
+                6212.9180269203
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1862.602005777,
+              "ci": [
+                1355.7061526719,
+                2374.7787538183
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 9730.0738790157,
+              "ci": [
+                8154.9452634091,
+                10307.5659437288
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0316033194,
+              "ci": [
+                -0.0167895251,
+                0.0858676006
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.5341607224,
+              "ci": [
+                -0.2067734574,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether tabular-uncalibrated tau=0.7 beats every single configuration; at $1.101 per task it succeeds on 80.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.4% (margin +3.2 points, 95% interval [-1.7, +8.6] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium) -> cloud-small (low)": 87.0,
+              "local-small (medium) -> cloud-small (high)": 44.0,
+              "cloud-big (medium) -> cloud-big (high)": 31.0,
+              "local-small (medium) -> cloud-mid (medium)": 28.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "tabular tau=0.8",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8421052632,
+              "ci": [
+                0.7842105263,
+                0.8894736842
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.364385004,
+              "ci": [
+                1.0039289988,
+                1.8382866113
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.6202071923,
+              "ci": [
+                1.1690162711,
+                2.2567805615
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0062893082,
+              "ci": [
+                0.9447852761,
+                1.07765062
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9119496855,
+              "ci": [
+                0.8559375916,
+                0.950310559
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.3368421053,
+              "ci": [
+                0.2684210526,
+                0.4052631579
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.4315789474,
+              "ci": [
+                0.3578947368,
+                0.5
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 4277.7625724426,
+              "ci": [
+                3657.0249429382,
+                4678.9331237338
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1605.8412987603,
+              "ci": [
+                1326.0543065042,
+                1965.3638218374
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 9679.2976772744,
+              "ci": [
+                8081.9839066972,
+                10258.3459181528
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0518721578,
+              "ci": [
+                0.0143921629,
+                0.1041610192
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                -0.0440773024,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular tau=0.8 beats every single configuration: at $1.364 per task it succeeds on 84.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.0% (margin +5.2 points, 95% interval [+1.4, +10.4] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium) -> cloud-small (low)": 87.0,
+              "local-small (medium) -> cloud-mid (medium)": 44.0,
+              "cloud-big (medium) -> cloud-big (high)": 31.0,
+              "cloud-mid (medium) -> cloud-big (high)": 28.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "tabular-uncalibrated tau=0.8",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8421052632,
+              "ci": [
+                0.7842105263,
+                0.8894736842
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.364385004,
+              "ci": [
+                1.0039289988,
+                1.8382866113
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.6202071923,
+              "ci": [
+                1.1690162711,
+                2.2567805615
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0062893082,
+              "ci": [
+                0.9447852761,
+                1.07765062
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9119496855,
+              "ci": [
+                0.8559375916,
+                0.950310559
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.3368421053,
+              "ci": [
+                0.2684210526,
+                0.4052631579
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.4315789474,
+              "ci": [
+                0.3578947368,
+                0.5
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 4277.7625724426,
+              "ci": [
+                3657.0249429382,
+                4678.9331237338
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1605.8412987603,
+              "ci": [
+                1326.0543065042,
+                1965.3638218374
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 9679.2976772744,
+              "ci": [
+                8081.9839066972,
+                10258.3459181528
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0518721578,
+              "ci": [
+                0.0143921629,
+                0.1041610192
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                -0.0440773024,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular-uncalibrated tau=0.8 beats every single configuration: at $1.364 per task it succeeds on 84.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.0% (margin +5.2 points, 95% interval [+1.4, +10.4] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium) -> cloud-small (low)": 87.0,
+              "local-small (medium) -> cloud-mid (medium)": 44.0,
+              "cloud-big (medium) -> cloud-big (high)": 31.0,
+              "cloud-mid (medium) -> cloud-big (high)": 28.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "tabular tau=0.9",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8842105263,
+              "ci": [
+                0.8315789474,
+                0.9263157895
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.6182872046,
+              "ci": [
+                1.2571103309,
+                2.078867892
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.8302057671,
+              "ci": [
+                1.3881019444,
+                2.4266783577
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0566037736,
+              "ci": [
+                1.0059769252,
+                1.125
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9559748428,
+              "ci": [
+                0.9141104294,
+                0.9811320755
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.1842105263,
+              "ci": [
+                0.1368421053,
+                0.2473684211
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.3210526316,
+              "ci": [
+                0.2578947368,
+                0.3894736842
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 3780.9411920621,
+              "ci": [
+                3106.4493264652,
+                4548.9309711604
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1193.6155969538,
+              "ci": [
+                1051.222648874,
+                1355.7061526719
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 9730.0738790157,
+              "ci": [
+                8081.9839066972,
+                10307.5659437288
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0798647791,
+              "ci": [
+                0.0518973575,
+                0.1198332861
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                0.7062387041,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular tau=0.9 beats every single configuration: at $1.618 per task it succeeds on 88.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 80.4% (margin +8.0 points, 95% interval [+5.2, +12.0] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (medium) -> cloud-big (high)": 59.0,
+              "local-small (medium) -> cloud-mid (medium)": 48.0,
+              "cloud-mid (medium) -> cloud-big (medium)": 44.0,
+              "local-small (medium) -> cloud-small (low)": 39.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "tabular-uncalibrated tau=0.9",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8842105263,
+              "ci": [
+                0.8315789474,
+                0.9263157895
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.6182872046,
+              "ci": [
+                1.2571103309,
+                2.078867892
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.8302057671,
+              "ci": [
+                1.3881019444,
+                2.4266783577
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0566037736,
+              "ci": [
+                1.0059769252,
+                1.125
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9559748428,
+              "ci": [
+                0.9141104294,
+                0.9811320755
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.1842105263,
+              "ci": [
+                0.1368421053,
+                0.2473684211
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.3210526316,
+              "ci": [
+                0.2578947368,
+                0.3894736842
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 3780.9411920621,
+              "ci": [
+                3106.4493264652,
+                4548.9309711604
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1193.6155969538,
+              "ci": [
+                1051.222648874,
+                1355.7061526719
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 9730.0738790157,
+              "ci": [
+                8081.9839066972,
+                10307.5659437288
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0798647791,
+              "ci": [
+                0.0518973575,
+                0.1198332861
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                0.7062387041,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. tabular-uncalibrated tau=0.9 beats every single configuration: at $1.618 per task it succeeds on 88.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 80.4% (margin +8.0 points, 95% interval [+5.2, +12.0] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (medium) -> cloud-big (high)": 59.0,
+              "local-small (medium) -> cloud-mid (medium)": 48.0,
+              "cloud-mid (medium) -> cloud-big (medium)": 44.0,
+              "local-small (medium) -> cloud-small (low)": 39.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "rules",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8631578947,
+              "ci": [
+                0.8105263158,
+                0.9052631579
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.0567730353,
+              "ci": [
+                0.8411097255,
+                1.2990402649
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.2243102238,
+              "ci": [
+                0.9419944332,
+                1.57534685
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0314465409,
+              "ci": [
+                0.96875,
+                1.1060152805
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9182389937,
+              "ci": [
+                0.8652605804,
+                0.950617284
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.2736842105,
+              "ci": [
+                0.2105263158,
+                0.3368421053
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.2736842105,
+              "ci": [
+                0.2105263158,
+                0.3368421053
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 2381.3260923551,
+              "ci": [
+                2106.9614994901,
+                2738.1571887149
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 637.7099018096,
+              "ci": [
+                524.0344307614,
+                851.990424028
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 5909.5547658766,
+              "ci": [
+                5211.8678483025,
+                6547.5834569827
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0922713512,
+              "ci": [
+                0.0700326819,
+                0.1371162231
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                0.7481050592,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-mid (medium) -> cloud-big (medium)": 190.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "oracle",
+          "hindsight": true,
+          "metrics": {
+            "success_rate": {
+              "value": 0.9421052632,
+              "ci": [
+                0.9,
+                0.9684210526
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.4873867816,
+              "ci": [
+                0.3162977254,
+                0.7185966929
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.5173379246,
+              "ci": [
+                0.3347825888,
+                0.7580235275
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.1257861635,
+              "ci": [
+                1.0784857028,
+                1.1986754967
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 929.182733829,
+              "ci": [
+                770.7111758639,
+                1091.740054323
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6728.2008720882,
+              "ci": [
+                5102.6493295289,
+                8818.8700339487
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.20722244,
+              "ci": [
+                0.1637669798,
+                0.2566247483
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                null,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium)": 100.0,
+              "cloud-small (low)": 31.0,
+              "cloud-small (high)": 22.0,
+              "cloud-mid (medium)": 15.0,
+              "cloud-big (medium)": 13.0,
+              "cloud-big (high)": 9.0
+            },
+            "latency_tasks": 190
+          }
+        }
+      ],
+      "ranking": [
+        {
+          "name": "rules",
+          "frontier_margin": 0.0922713512,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 1,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "tabular tau=0.9",
+          "frontier_margin": 0.0798647791,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 2,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "tabular-uncalibrated tau=0.9",
+          "frontier_margin": 0.0798647791,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 3,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "tabular tau=0.8",
+          "frontier_margin": 0.0518721578,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 4,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "tabular-uncalibrated tau=0.8",
+          "frontier_margin": 0.0518721578,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 5,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "tabular tau=0.7",
+          "frontier_margin": 0.0316033194,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 6,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "tabular-uncalibrated tau=0.7",
+          "frontier_margin": 0.0316033194,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 7,
+          "ranked_by": "frontier_margin"
+        }
+      ],
+      "notes": [
+        "Cascades are simulated from independent single-configuration runs: a cascade succeeds if any step's run succeeded and pays for a step only when every earlier step failed. Each step's cost is that of a fresh run, so cache reuse between steps (and any benefit of seeing the earlier failure) is not in the data.",
+        "Added latency is the time spent in cascade attempts before the one that produced the final result; routing-decision time is not in the grid and is not included."
+      ],
+      "stamp": "SYNTHETIC DATA. NOT A RESULT."
+    }
+  ],
+  "stamp": "SYNTHETIC DATA. NOT A RESULT.",
+  "synthetic_data": true,
+  "notice": "SYNTHETIC DATA. NOT A RESULT. This report was made from the evaluator's synthetic generator. It says nothing about real models."
+}

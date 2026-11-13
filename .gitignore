@@ -13,3 +13,5 @@ dist/
 .coverage
 .cache/
 node_modules/
+# trained models (docs/MODEL-CARD-TABULAR.md): never checked in
+/models/

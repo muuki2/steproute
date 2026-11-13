@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="viz" viewBox="0 0 820 672" width="820" height="672" role="img" aria-label="SYNTHETIC DATA. NOT A RESULT.">
+<title>SYNTHETIC DATA. NOT A RESULT.</title><style>
+.viz{color-scheme:light;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;
+--grid:#e6e5e0;--cfg:#6b6a65;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#52514e}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .viz{
+color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#8f8e86;
+--grid:#33332f;--cfg:#a6a59c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c3c2b7}}
+:root[data-theme="dark"] .viz{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;
+--ink2:#c3c2b7;--muted:#8f8e86;--grid:#33332f;--cfg:#a6a59c;--s1:#3987e5;--s2:#d95926;
+--s3:#199e70;--s4:#c3c2b7}
+.viz text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
+.bg{fill:var(--surface)} .title{font-size:17px;font-weight:600}
+.sub{font-size:12px;fill:var(--ink2)} .tick{font-size:11px;fill:var(--ink2)}
+.axis-label{font-size:12px;fill:var(--ink2)} .grid{stroke:var(--grid);stroke-width:1}
+.axis{stroke:var(--muted);stroke-width:1} .cfg{fill:var(--cfg);stroke:var(--surface);stroke-width:2}
+.cfg-label{font-size:10.5px;fill:var(--ink2)} .frontier{fill:none;stroke:var(--ink2);
+stroke-width:2;stroke-dasharray:6 4} .pol-label{font-size:12px;font-weight:600}
+.legend{font-size:12px} .legend-note{font-size:11px;fill:var(--ink2)}
+.whisker{stroke-width:1.5}
+</style>
+<rect class="bg" width="820" height="672"/>
+<text class="title" x="76" y="28">SYNTHETIC DATA. NOT A RESULT.</text>
+<text class="sub" x="76" y="46">grid.jsonl · grid data, task level</text>
+<line class="grid" x1="76" x2="796" y1="410.0" y2="410.0"/>
+<text class="tick" x="68" y="414.0" text-anchor="end">0%</text>
+<line class="grid" x1="76" x2="796" y1="340.8" y2="340.8"/>
+<text class="tick" x="68" y="344.8" text-anchor="end">20%</text>
+<line class="grid" x1="76" x2="796" y1="271.6" y2="271.6"/>
+<text class="tick" x="68" y="275.6" text-anchor="end">40%</text>
+<line class="grid" x1="76" x2="796" y1="202.4" y2="202.4"/>
+<text class="tick" x="68" y="206.4" text-anchor="end">60%</text>
+<line class="grid" x1="76" x2="796" y1="133.2" y2="133.2"/>
+<text class="tick" x="68" y="137.2" text-anchor="end">80%</text>
+<line class="grid" x1="76" x2="796" y1="64.0" y2="64.0"/>
+<text class="tick" x="68" y="68.0" text-anchor="end">100%</text>
+<line class="grid" x1="76.0" x2="76.0" y1="64" y2="410"/>
+<text class="tick" x="76.0" y="428" text-anchor="middle">$0</text>
+<line class="grid" x1="220.0" x2="220.0" y1="64" y2="410"/>
+<text class="tick" x="220.0" y="428" text-anchor="middle">$0.5</text>
+<line class="grid" x1="364.0" x2="364.0" y1="64" y2="410"/>
+<text class="tick" x="364.0" y="428" text-anchor="middle">$1.00</text>
+<line class="grid" x1="508.0" x2="508.0" y1="64" y2="410"/>
+<text class="tick" x="508.0" y="428" text-anchor="middle">$1.50</text>
+<line class="grid" x1="652.0" x2="652.0" y1="64" y2="410"/>
+<text class="tick" x="652.0" y="428" text-anchor="middle">$2.00</text>
+<line class="grid" x1="796.0" x2="796.0" y1="64" y2="410"/>
+<text class="tick" x="796.0" y="428" text-anchor="middle">$2.50</text>
+<line class="axis" x1="76" x2="796" y1="410" y2="410"/>
+<line class="axis" x1="76" x2="76" y1="64" y2="410"/>
+<text class="axis-label" x="436.0" y="448" text-anchor="middle">Spend: mean cost per task (USD)</text>
+<text class="axis-label" transform="translate(24,237.0) rotate(-90)" text-anchor="middle">Score: success rate</text>
+<path class="frontier" d="M76.0,247.9L105.9,187.8L177.3,158.7L465.0,136.8L710.4,120.5L796.0,120.5"><title>Single-configuration frontier: best success reachable at each spend by single configurations or random mixes of them</title></path>
+<circle class="cfg" cx="710.4" cy="120.5" r="5"><title>cloud-big (high): 83.7% at $2.20 per task</title></circle>
+<text class="cfg-label" x="701.4" y="134.0" text-anchor="end">cloud-big (high)</text>
+<circle class="cfg" cx="465.0" cy="136.8" r="5"><title>cloud-big (medium): 78.9% at $1.35 per task</title></circle>
+<text class="cfg-label" x="474.0" y="150.3">cloud-big (medium)</text>
+<circle class="cfg" cx="177.3" cy="158.7" r="5"><title>cloud-mid (medium): 72.6% at $0.352 per task</title></circle>
+<text class="cfg-label" x="186.3" y="172.2">cloud-mid (medium)</text>
+<circle class="cfg" cx="105.9" cy="187.8" r="5"><title>cloud-small (high): 64.2% at $0.104 per task</title></circle>
+<text class="cfg-label" x="114.9" y="201.3">cloud-small (high)</text>
+<circle class="cfg" cx="89.1" cy="227.9" r="5"><title>cloud-small (low): 52.6% at $0.0456 per task</title></circle>
+<text class="cfg-label" x="98.1" y="241.4">cloud-small (low)</text>
+<circle class="cfg" cx="76.0" cy="247.9" r="5"><title>local-small (medium): 46.8% at $0 per task</title></circle>
+<text class="cfg-label" x="85.0" y="261.4">local-small (medium)</text>
+<line class="whisker" stroke="var(--s1)" x1="393.0" x2="393.0" y1="151.4" y2="113.2"/>
+<line class="whisker" stroke="var(--s1)" x1="299.5" x2="524.7" y1="131.4" y2="131.4"/>
+<path d="M392.98193691961876,124.37894736842105L399.98193691961876,131.37894736842105L392.98193691961876,138.37894736842105L385.98193691961876,131.37894736842105Z" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>tabular tau=0.7: 80.5% at $1.10 per task; verdict not_shown</title></path>
+<text class="pol-label" x="384.0" y="146.4" text-anchor="end">tabular tau=0.7</text>
+<line class="whisker" stroke="var(--s2)" x1="393.0" x2="393.0" y1="151.4" y2="113.2"/>
+<line class="whisker" stroke="var(--s2)" x1="299.5" x2="524.7" y1="131.4" y2="131.4"/>
+<path d="M392.98193691961876,124.37894736842105L399.63193691961874,136.27894736842106L386.3319369196188,136.27894736842106Z" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"><title>tabular-uncalibrated tau=0.7: 80.5% at $1.10 per task; verdict not_shown</title></path>
+<text class="pol-label" x="402.0" y="146.4">tabular-uncalibrated tau=0.7</text>
+<line class="whisker" stroke="var(--s3)" x1="468.9" x2="468.9" y1="138.7" y2="102.2"/>
+<line class="whisker" stroke="var(--s3)" x1="365.1" x2="605.4" y1="118.6" y2="118.6"/>
+<path d="M463.34288116228913,113.03157894736844H474.5428811622892V124.23157894736843H463.34288116228913Z" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"><title>tabular tau=0.8: 84.2% at $1.36 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="477.9" y="133.6">tabular tau=0.8</text>
+<line class="whisker" stroke="var(--s4)" x1="468.9" x2="468.9" y1="138.7" y2="102.2"/>
+<line class="whisker" stroke="var(--s4)" x1="365.1" x2="605.4" y1="118.6" y2="118.6"/>
+<path d="M468.94,111.63L470.79,116.08L475.60,116.47L471.94,119.60L473.06,124.29L468.94,121.78L464.83,124.29L465.95,119.60L462.29,116.47L467.09,116.08Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>tabular-uncalibrated tau=0.8: 84.2% at $1.36 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="477.9" y="133.6">tabular-uncalibrated tau=0.8</text>
+<line class="whisker" stroke="var(--s4)" x1="542.1" x2="542.1" y1="122.3" y2="89.5"/>
+<line class="whisker" stroke="var(--s4)" x1="438.0" x2="674.7" y1="104.1" y2="104.1"/>
+<path d="M542.066714925272,111.06315789473686L548.716714925272,99.16315789473686L535.416714925272,99.16315789473686Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>tabular tau=0.9: 88.4% at $1.62 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="551.1" y="119.1">tabular tau=0.9</text>
+<line class="whisker" stroke="var(--s4)" x1="542.1" x2="542.1" y1="122.3" y2="89.5"/>
+<line class="whisker" stroke="var(--s4)" x1="438.0" x2="674.7" y1="104.1" y2="104.1"/>
+<path d="M539.6167149252719,97.06315789473686H544.516714925272V101.61315789473686H549.066714925272V106.51315789473686H544.516714925272V111.06315789473686H539.6167149252719V106.51315789473686H535.066714925272V101.61315789473686H539.6167149252719Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>tabular-uncalibrated tau=0.9: 88.4% at $1.62 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="551.1" y="97.1">tabular-uncalibrated tau=0.9</text>
+<line class="whisker" stroke="var(--s4)" x1="380.4" x2="380.4" y1="129.6" y2="96.8"/>
+<line class="whisker" stroke="var(--s4)" x1="318.2" x2="450.1" y1="111.3" y2="111.3"/>
+<path d="M380.3506341655292,104.34736842105262L387.3506341655292,111.34736842105262L380.3506341655292,118.34736842105262L373.3506341655292,111.34736842105262Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>rules: 86.3% at $1.06 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="389.4" y="104.3">rules</text>
+<line class="whisker" stroke="var(--s4)" x1="216.4" x2="216.4" y1="98.6" y2="74.9"/>
+<line class="whisker" stroke="var(--s4)" x1="167.1" x2="283.0" y1="84.0" y2="84.0"/>
+<path d="M216.3673930962326,77.0315789473684L223.0173930962326,88.93157894736841L209.7173930962326,88.93157894736841Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>oracle: 94.2% at $0.487 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="225.4" y="99.0">oracle</text>
+<circle class="cfg" cx="83" cy="468" r="5"/>
+<text class="legend" x="96" y="472">single configuration</text>
+<path class="frontier" d="M276,468H308"/>
+<text class="legend" x="316" y="472">frontier: envelope of single configurations and the origin</text>
+<path d="M83,482L89,488L83,494L77,488Z" fill="var(--s1)"/>
+<text class="legend" x="96" y="492">tabular tau=0.7: not shown</text>
+<path d="M83,502L88.7,512.2L77.3,512.2Z" fill="var(--s2)"/>
+<text class="legend" x="96" y="512">tabular-uncalibrated tau=0.7: not shown</text>
+<path d="M78.2,523.2H87.8V532.8H78.2Z" fill="var(--s3)"/>
+<text class="legend" x="96" y="532">tabular tau=0.8: beats the frontier</text>
+<path d="M83.00,542.00L84.59,545.82L88.71,546.15L85.57,548.83L86.53,552.85L83.00,550.70L79.47,552.85L80.43,548.83L77.29,546.15L81.41,545.82Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="552">tabular-uncalibrated tau=0.8: beats the frontier</text>
+<path d="M83,574L88.7,563.8L77.3,563.8Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="572">tabular tau=0.9: beats the frontier</text>
+<path d="M80.9,582H85.1V585.9H89V590.1H85.1V594H80.9V590.1H77V585.9H80.9Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="592">tabular-uncalibrated tau=0.9: beats the frontier</text>
+<path d="M83,602L89,608L83,614L77,608Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="612">rules: beats the frontier</text>
+<path d="M83,622L88.7,632.2L77.3,632.2Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="632">oracle (hindsight reference): beats the frontier</text>
+<text class="legend-note" x="76" y="652">whiskers: confidence intervals of success and spend</text>
+<g class="stamp" aria-label="SYNTHETIC DATA. NOT A RESULT."><text transform="translate(410,336) rotate(-24)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="44" font-weight="800" style="fill:#c62828;fill-opacity:0.22">SYNTHETIC DATA. NOT A RESULT.</text><text x="410" y="664" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" style="fill:#c62828">SYNTHETIC DATA. NOT A RESULT.</text></g></svg>

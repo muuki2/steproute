@@ -19,6 +19,7 @@ from steproute.core.export import ExportSummary, export_replay
 from steproute.core.labels import Label, LabelConfig, apply_label, label
 from steproute.core.policy import (
     DEFAULT_EST_OUTPUT_TOKENS,
+    BatchPredictor,
     CandidateSetMismatch,
     CandidateSpec,
     FixedPolicy,
@@ -75,6 +76,7 @@ __all__ = [
     "state_after_failure",
     "ExportSummary",
     "DEFAULT_EST_OUTPUT_TOKENS",
+    "BatchPredictor",
     "CandidateSetMismatch",
     "CandidateSpec",
     "FixedPolicy",

@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_mcp(sub)
     add_tasks(sub)
     _add_eval(sub)
+    _add_ml(sub)
     add_replay(sub)
     return parser
 
@@ -54,6 +55,26 @@ def _add_eval(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
 
 def _eval(args: argparse.Namespace) -> int:
     from steproute.eval.cli import run
+
+    return run(args)
+
+
+def _add_ml(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``ml`` command group: train and evaluate the tabular predictor (needs ``[ml]``)."""
+    p = sub.add_parser(
+        "ml",
+        help="Train and evaluate the LightGBM predictor (needs steproute[ml]).",
+        description="The tabular baseline predictor: train it on a replay grid, evaluate it "
+        "with the offline evaluator. See docs/MODEL-CARD-TABULAR.md.",
+    )
+    from steproute.ml.args import add_arguments
+
+    add_arguments(p)
+    p.set_defaults(func=_ml)
+
+
+def _ml(args: argparse.Namespace) -> int:
+    from steproute.ml.cli import run
 
     return run(args)
 
