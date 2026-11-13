@@ -107,7 +107,8 @@ No authentication. `{"status": "ok", "version": "<package>", "schema_version": "
 | 413 | `payload_too_large` | Body over `max_body_bytes` (default 1 MiB). The connection is closed. | Do not send the whole prompt; send `task_text` only if needed, truncated. |
 | 415 | `unsupported_media_type` | POST without `Content-Type: application/json`. | Set the header. |
 | 500 | `internal_error` | Unexpected service bug. The connection is closed. | Treat like an unreachable service. |
-| 503 | `no_action_allowed` | `/decide` only: the policy failed and neither the default action nor the local fallback is allowed for this state. Body also has `"sensitive": bool`. | Do not call a cloud model if `sensitive` is true. Run the step locally yourself or refuse it. If false, use your own default. |
+| 503 | `no_fallback_configured` | `/decide` only: the policy failed (error, timeout, ...) and the operator configured no `[failopen]` action. steproute has no decision. Body has `"sensitive": bool`. | If `sensitive` is false, proceed with the model you would have used without steproute. If `sensitive` is true, keep the call local or refuse it: steproute could not vouch for any cloud model. |
+| 503 | `no_action_allowed` | `/decide` only: the policy failed and fail-open actions are configured, but none is allowed for this state (for example a sensitive state with a cloud default and no local fallback). Body has `"sensitive": bool`. | Same as `no_fallback_configured`. |
 | 503 | `store_unavailable` | `/report` only: the outcome could not be written. | Retry later, or keep it and re-send. |
 
 A client must also handle "service unreachable" (refused connection, timeout, closed
@@ -171,14 +172,12 @@ salt_env = "STEPROUTE_SALT"     # NAME of the environment variable holding the s
   the model does not list, a holdout model, a `local_fallback` that is not a local model.
 * `policy.kind = "fixed"` without `[policy] action`.
 * `hash_text = true` without a salt.
-* The default fail-open action is a cloud model, no `local_fallback` is set, and the catalog
-  has non-holdout local models. A sensitive state would then have nowhere to go when the policy
-  fails; set `local_fallback`. (If the catalog has no local models at all this is allowed, and a
-  sensitive state gets a 503 instead.)
 
-Zero configuration is valid: the default fail-open action is then the strongest non-holdout
-local model (so fail-open can never send anything to a cloud provider, but may be weaker than
-you want). Set `[failopen] default` to what your users expect.
+Nothing is derived or guessed for fail-open: `[failopen] default` and `local_fallback` are used
+only when you set them (both are optional). With neither set, a policy failure gives the
+503 `no_fallback_configured` below, because steproute cannot know which model exists on your
+machine. If no *local* fail-open action is configured the service logs a startup warning:
+sensitive states will then get a 503 when the policy fails.
 
 ## Fail-open
 
@@ -199,8 +198,9 @@ The fallback chooses the first of `[failopen] default`, then `local_fallback` th
 (`docs/ACTIONS.md`: sensitive means local only, context window, tools, holdout). The state is
 first passed through sensitive detection (`docs/PRIVACY.md`), so a secret in `task_text` or a
 sensitive path keeps the step local even when the collector did not set the flag and even
-when the default is a cloud model. If neither action is allowed the answer is
-`503 no_action_allowed` with `"sensitive"` set; no decision is logged for it.
+when the default is a cloud model. If no action is configured the answer is
+`503 no_fallback_configured`; if some are configured but none is allowed for this state it is
+`503 no_action_allowed`. Both bodies carry `"sensitive"`; no decision is logged for them.
 
 The fail-open decision has `propensity` 1.0 and the policy name above, so it is logged like any
 other decision and can be filtered out of training and off-policy evaluation by prefix

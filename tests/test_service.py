@@ -163,6 +163,7 @@ def test_decide_contract(start: Callable[..., Running]) -> None:
     assert status == 200 and body2["decision_id"] != body["decision_id"]
 
 
+@pytest.mark.filterwarnings("ignore::steproute.core.schema.UnknownFieldWarning")
 def test_decide_tolerates_unknown_keys(start: Callable[..., Running]) -> None:
     status, body, _ = start().client().request("POST", "/decide", {**BODY, "future_field": 1})
     assert status == 200
@@ -704,9 +705,6 @@ def test_startup_refusals(tmp_path: Path) -> None:
             ),
             environ={},
         )
-    # cloud default, no fallback, catalog has local models
-    with pytest.raises(ServiceConfigError, match="local_fallback"):
-        build_service(config(tmp_path, default_action=("claude-sonnet-5-5", "medium")), environ={})
     # hash_text needs a salt
     with pytest.raises(ServiceConfigError):
         build_service(config(tmp_path, hash_text=True), environ={})
@@ -722,11 +720,45 @@ def test_non_loopback_with_token_is_allowed_to_build(tmp_path: Path) -> None:
         make_server(svc, None, host="0.0.0.0", port=0)
 
 
-def test_zero_config_defaults_fail_open_to_local(tmp_path: Path) -> None:
+def test_nothing_is_derived_for_fail_open(tmp_path: Path) -> None:
     svc, _ = build_service(config(tmp_path), environ={})
-    assert svc.default_action.model == "qwen3-coder:30b"
-    assert CATALOG.get(svc.default_action.model).local
+    assert svc.default_action is None and svc.local_fallback is None
     assert isinstance(svc.policy, RulePolicy)
+
+
+def test_cloud_default_without_fallback_starts_with_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING", logger="steproute.service"):
+        svc, _ = build_service(
+            config(tmp_path, default_action=("claude-sonnet-5-5", "medium")), environ={}
+        )
+    assert svc.local_fallback is None
+    assert "sensitive" in caplog.text
+
+
+@pytest.mark.parametrize("kind", ["slow", "raising"])
+def test_unconfigured_fail_open_is_503(
+    start: Callable[..., Running], tmp_path: Path, kind: str
+) -> None:
+    pol = SlowPolicy(0.3) if kind == "slow" else RaisingPolicy()
+    r = start(config(tmp_path, budget_ms=20.0), policy=pol)
+    c = r.client()
+    for sensitive in (False, True):
+        status, body, _ = c.request("POST", "/decide", {**BODY, "sensitive": sensitive})
+        assert status == 503
+        assert body["error"] == "no_fallback_configured"
+        assert body["sensitive"] is sensitive
+    # Secret in text makes it sensitive without the flag.
+    _, body, _ = c.request("POST", "/decide", {**BODY, "task_text": fake_secret()})
+    assert body["sensitive"] is True
+    assert not list(r.store.records())  # a 503 logs no decision
+    assert r.service.health()["fail_open_count"] == 3
+
+
+def test_unconfigured_healthy_policy_unaffected(start: Callable[..., Running]) -> None:
+    status, body, _ = start().client().request("POST", "/decide", BODY)
+    assert status == 200 and body["policy"] == "rules"
 
 
 def test_salt_comes_from_environment(tmp_path: Path) -> None:

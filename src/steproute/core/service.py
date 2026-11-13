@@ -87,8 +87,10 @@ class ServiceConfigError(ValueError):
 class NoActionAllowed(Exception):
     """Neither the policy nor the configured fallbacks can route this state (HTTP 503)."""
 
-    def __init__(self, sensitive: bool) -> None:
+    def __init__(self, sensitive: bool, configured: bool = True) -> None:
         self.sensitive = sensitive
+        #: False when the operator configured no fallback action at all.
+        self.configured = configured
         super().__init__("no action is allowed for this state")
 
 
@@ -267,20 +269,6 @@ def _check_action(label: str, spec: ActionSpec, catalog: Catalog, *, local: bool
     return action
 
 
-def _derive_default(catalog: Catalog) -> Action:
-    """The default fail-open action when none is configured: a local model if there is one."""
-    pool = [m for m in catalog.pool() if m.tools]
-    if not pool:
-        raise ServiceConfigError("the catalog has no usable (non-holdout, tool-capable) model")
-    local = [m for m in pool if m.local]
-    if local:
-        m = local[-1]  # strongest local model (the catalog iterates weakest first)
-    else:
-        m = min(pool, key=lambda p: (abs(p.tier - 5), p.id))
-    effort = "medium" if "medium" in m.efforts else m.efforts[len(m.efforts) // 2]
-    return Action(m.id, effort)
-
-
 class _Call:
     """One policy call running in a worker thread, with a lock-protected hand-off."""
 
@@ -311,7 +299,7 @@ class Service:
         catalog: Catalog,
         store: TraceStore,
         privacy: PrivacyConfig,
-        default_action: Action,
+        default_action: Action | None,
         local_fallback: Action | None,
         budget_ms: float = DEFAULT_BUDGET_MS,
         max_abandoned: int = DEFAULT_MAX_ABANDONED,
@@ -426,6 +414,9 @@ class Service:
         """The fallback decision; every candidate goes through the hard constraints."""
         marked = mark_before_routing(state, self.privacy)
         self.fail_open_count += 1
+        if self.default_action is None and self.local_fallback is None:
+            log.error("fail-open (%s): no fallback action is configured", reason)
+            raise NoActionAllowed(marked.sensitive, configured=False)
         for action in (self.default_action, self.local_fallback):
             if action is None:
                 continue
@@ -537,22 +528,19 @@ def build_service(
     default = (
         _check_action("failopen.default", config.default_action, catalog, local=False)
         if config.default_action
-        else _derive_default(catalog)
+        else None
     )
     fallback = (
         _check_action("failopen.local_fallback", config.local_fallback, catalog, local=True)
         if config.local_fallback
         else None
     )
-    if fallback is None:
-        if not catalog.get(default.model).local and any(m.local and not m.holdout for m in catalog):
-            raise ServiceConfigError(
-                f"failopen.default {default.label()} is a cloud model and the catalog has "
-                "local models, so [failopen] local_fallback is required: a sensitive state "
-                "must have somewhere to go when the policy fails"
-            )
-        if config.default_action is None and catalog.get(default.model).local:
-            fallback = default
+    if fallback is None and (default is None or not catalog.get(default.model).local):
+        log.warning(
+            "no local fail-open action is configured: if the policy fails, a sensitive state "
+            "gets HTTP 503 %s instead of a decision",
+            "no_action_allowed" if default else "no_fallback_configured",
+        )
 
     if policy is None:
         try:
@@ -831,11 +819,20 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             decision = self.server.service.decide(state)
         except NoActionAllowed as exc:
+            if not exc.configured:
+                return self._error(
+                    503,
+                    "no_fallback_configured",
+                    "steproute has no decision and no fail-open action is configured; "
+                    "use the model you would have used without steproute (local or refuse "
+                    "if sensitive is true)",
+                    sensitive=exc.sensitive,
+                )
             return self._error(
                 503,
                 "no_action_allowed",
-                "no action is allowed for this state and the policy could not decide; "
-                "handle it locally or refuse the call",
+                "the policy failed and no configured fail-open action is allowed for this "
+                "state; use your own model (local or refuse if sensitive is true)",
                 sensitive=exc.sensitive,
             )
         self._send(200, decision.to_dict())
@@ -877,8 +874,6 @@ def make_server(
         raise ServiceConfigError(
             f"refusing to listen on non-loopback address {host!r} without a bearer token"
         )
-    # Unknown keys are tolerated by design; do not spam stderr from the request path.
-    warnings.filterwarnings("ignore", category=UnknownFieldWarning)
     server = _Server((host, port), service, token)
     server.max_body = max_body_bytes
     if token is None and _is_loopback(host):
@@ -896,6 +891,9 @@ def serve(
     import sys
 
     out = out or sys.stdout
+    # Unknown keys are tolerated by design; do not spam stderr from the request path.
+    # Process-wide, so it lives here and not in make_server.
+    warnings.filterwarnings("ignore", category=UnknownFieldWarning)
     service, token = build_service(config, environ=environ)
     server = make_server(
         service,
