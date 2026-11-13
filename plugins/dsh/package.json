@@ -1,0 +1,27 @@
+{
+  "name": "steproute-dsh",
+  "version": "0.1.0",
+  "description": "steproute collector for DeepSeek Harness: one routing decision and one outcome per agent step, shadow mode by default",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "lib/*.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.3",
+    "node": ">=24.9.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

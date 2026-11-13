@@ -63,6 +63,9 @@ class Reply:
     usage: bool = True
     #: ``"text"`` replies with a tool call too: the assistant text goes with the call.
     tool_text: str | None = None
+    #: The tool call's id; ``None`` keeps the fixed ``toolu_mock_1`` / ``call_mock_1``. A
+    #: scripted agent loop that keeps every call in its history needs distinct ids.
+    tool_id: str | None = None
 
 
 @dataclass
@@ -345,7 +348,12 @@ def _anthropic_content(reply: Reply) -> tuple[list[dict[str, Any]], str]:
         if reply.tool_text:
             blocks.append({"type": "text", "text": reply.tool_text})
         blocks.append(
-            {"type": "tool_use", "id": "toolu_mock_1", "name": reply.tool_name, "input": args}
+            {
+                "type": "tool_use",
+                "id": reply.tool_id or "toolu_mock_1",
+                "name": reply.tool_name,
+                "input": args,
+            }
         )
         return blocks, "tool_use"
     if reply.kind == "empty":
@@ -375,7 +383,7 @@ def _message(reply: Reply) -> tuple[dict[str, Any], str]:
                 "content": reply.tool_text,
                 "tool_calls": [
                     {
-                        "id": "call_mock_1",
+                        "id": reply.tool_id or "call_mock_1",
                         "type": "function",
                         "function": {"name": reply.tool_name, "arguments": reply.tool_args},
                     }

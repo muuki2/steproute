@@ -1,0 +1,37 @@
+# The steproute bundle layer: one plugin row. docs/DSH.md explains every key.
+# Override it in your profile's cordis.patch.yml by id (a patch replaces the whole
+# `config`, so restate every key you keep):
+#
+#   - id: steproute
+#     config:
+#       mode: route
+#
+# Environment variables win over this file for one run: STEPROUTE_MODE, STEPROUTE_URL,
+# STEPROUTE_TOKEN (the bearer token, only if the service uses [auth]).
+- insert:
+    - id: steproute
+      name: steproute-dsh
+      config:
+        # shadow (default): ask and log, change nothing. route: also apply decisions between
+        # steps. off: do nothing at all (or set `disabled: true` on this row).
+        mode: shadow
+        serviceUrl: http://127.0.0.1:8789
+        decideTimeoutMs: 200
+        reportTimeoutMs: 500
+        routeSubagents: true
+        # Also write the load line and the shutdown summary to stderr (dsh's logger shows
+        # nothing in headless runs). STEPROUTE_STATUS=stderr does the same for one run.
+        statusToStderr: false
+        # Catalog model id -> the dsh route that runs it. Decisions naming a model that is not
+        # listed here are logged but never applied. To route to a local model, add it here
+        # with the provider name of your llm-pi-ai route, and add "ollama" to the service's
+        # [catalog] providers (service/steproute.toml).
+        models:
+          deepseek-flash:
+            provider: deepseek-official
+            model: deepseek-flash
+            efforts: { none: 'off', low: low, high: high, max: max }
+          deepseek-v4-pro:
+            provider: deepseek-official
+            model: deepseek-v4-pro
+            efforts: { none: 'off', low: low, high: high, max: max }

@@ -1,0 +1,10 @@
+{
+  "name": "steproute-dsh-pinned",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The exact dsh release the steproute dsh plugin is built and tested against. Install with: npm ci --ignore-scripts (docs/DSH.md).",
+  "type": "module",
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.2.2-rc.3"
+  }
+}

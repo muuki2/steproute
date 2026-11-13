@@ -1,0 +1,8 @@
+;; macOS sandbox profile for the scripted dsh sessions (scripts/dsh_session.sh): everything is
+;; allowed except outbound network connections, which may go to loopback only. Unix-domain
+;; sockets are denied too, so the system resolver (mDNSResponder) cannot be asked to look up
+;; an external name on the session's behalf.
+(version 1)
+(allow default)
+(deny network-outbound)
+(allow network-outbound (remote ip "localhost:*"))
