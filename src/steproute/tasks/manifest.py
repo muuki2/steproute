@@ -55,6 +55,7 @@ _TASK_KEYS = {
     "test_cmd",
     "timeout_s",
     "gold_patch",
+    "prompt",
 }
 
 
@@ -81,6 +82,9 @@ class Task:
     test_cmd: tuple[str, ...] = ()
     timeout_s: float = 1800.0
     gold_patch: Path | None = None
+    #: The problem statement given to the agent (local tasks; SWE-bench tasks take it from
+    #: the dataset row).
+    prompt: str | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +166,9 @@ def _task(raw: Any, index: int, meta: Mapping[str, Any], base: Path | None) -> T
     image = raw.get("image")
     if image is not None:
         _check_type(image, str, f"{where}, 'image'")
+    prompt = raw.get("prompt")
+    if prompt is not None:
+        _check_type(prompt, str, f"{where}, 'prompt'")
     task = Task(
         id=tid,
         backend=backend,
@@ -173,6 +180,7 @@ def _task(raw: Any, index: int, meta: Mapping[str, Any], base: Path | None) -> T
         test_cmd=tuple(test_cmd),
         timeout_s=float(timeout),
         gold_patch=path("gold_patch"),
+        prompt=prompt,
     )
     if backend == "local" and (task.repo is None or not task.test_cmd):
         raise ManifestError(f"{where}: a local task needs 'repo' and 'test_cmd'")

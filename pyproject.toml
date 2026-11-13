@@ -49,5 +49,6 @@ files = [
     "src/steproute/collectors",
     "src/steproute/tasks",
     "src/steproute/eval",
+    "src/steproute/replay",
 ]
 strict = true
