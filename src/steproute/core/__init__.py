@@ -13,6 +13,7 @@ from steproute.core.schema import (
     effort_rank,
     new_decision_id,
 )
+from steproute.core.store import TraceStore
 
 __all__ = [
     "EFFORTS",
@@ -23,6 +24,7 @@ __all__ = [
     "ModelProfile",
     "Outcome",
     "StepState",
+    "TraceStore",
     "UnknownFieldWarning",
     "effort_rank",
     "new_decision_id",
