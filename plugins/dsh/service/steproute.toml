@@ -1,0 +1,28 @@
+# Configuration for `steproute serve` when it serves the dsh plugin.
+#   steproute serve --config plugins/dsh/service/steproute.toml
+# Reference: docs/SERVICE.md (keys) and docs/DSH.md (why these values).
+
+[server]
+host = "127.0.0.1"
+port = 8789               # the plugin's default serviceUrl is http://127.0.0.1:8789
+
+[catalog]
+# dsh can only run models it has a provider route for. The plugin's default mapping covers
+# the DeepSeek API route, so decisions are made among DeepSeek models alone. With a local
+# model behind an llm-pi-ai route, add "ollama" here and map the model in the plugin row.
+# With no local model, a sensitive step has no allowed action and gets HTTP 503 with
+# "sensitive": true; the plugin then leaves that step on your own model and logs nothing.
+providers = ["deepseek"]
+
+[policy]
+kind = "rules"
+rules_config = "rules.toml"
+
+[failopen]
+budget_ms = 50
+# Logged as policy "fail_open:<reason>" when the policy fails; the plugin never applies a
+# fail-open decision, so the step runs on your own model.
+default = { model = "deepseek-flash", effort = "high" }
+
+# [store]
+# path = "~/.steproute/traces"   # the default; `steproute serve --store DIR` overrides it

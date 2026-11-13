@@ -1,0 +1,21 @@
+# Rule baseline for the dsh plugin's service (docs/RULES.md). Keys left out keep the shipped
+# defaults (steproute/catalogs/rules.toml).
+
+[cascade]
+# A decision's fallback step cannot be run: a dsh step's answer is committed to the session
+# log before anything could check it, and nothing can re-run that step. Decisions therefore
+# carry a single step, so what is logged is what can be executed (docs/DSH.md, decision 4).
+enabled = false
+
+[cheap]
+# dsh's read-only tools (dsh-tool-fs, dsh-tool-fs-search) next to the shipped list.
+read_only_tools = [
+  "search", "read", "grep", "glob", "ls", "list", "find", "cat",
+  "websearch", "webfetch", "notebookread",
+  "test", "tests", "run_tests", "test_run", "pytest",
+  "read_image", "web_search", "web_fetch",
+]
+
+[models]
+# The catalog holds DeepSeek models only ([catalog] providers in steproute.toml).
+provider_order = ["deepseek"]

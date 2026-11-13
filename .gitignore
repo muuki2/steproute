@@ -12,3 +12,4 @@ dist/
 .hypothesis/
 .coverage
 .cache/
+node_modules/
