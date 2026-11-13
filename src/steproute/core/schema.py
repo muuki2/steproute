@@ -26,6 +26,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "SOURCES",
     "Action",
+    "CandidateSet",
     "Decision",
     "ModelProfile",
     "Outcome",
@@ -288,9 +289,33 @@ class StepState(_Record):
             raise ValueError(f"unknown source {self.source!r}; expected one of {SOURCES}")
 
 
+@dataclass(frozen=True)
+class CandidateSet(_Record):
+    """A compact, verifiable description of a decision's candidate set.
+
+    The candidates are ``filter_feasible(state, enumerate_actions(catalog, max_depth,
+    include_holdout=...), catalog, allow=..., deny=..., include_holdout=...)`` for the
+    decision's own state. ``fingerprint`` hashes that definition (the catalog fields that
+    shape the set, plus the parameters below), so a reader can rebuild the list from the state
+    and a catalog and check it is the same one; ``count`` is the list's length. See
+    ``docs/POLICY.md`` and ``steproute.core.policy.rebuild_candidates``.
+    """
+
+    fingerprint: str
+    count: int
+    max_depth: int
+    include_holdout: bool = False
+    allow: tuple[str, ...] | None = None
+    deny: tuple[str, ...] = ()
+
+
 @dataclass
 class Decision(_Record):
-    """A routing decision, logged before the step runs."""
+    """A routing decision, logged before the step runs.
+
+    ``candidates`` may be empty when ``candidate_set`` is set: the explicit list was left out
+    to keep the record small and can be rebuilt with ``rebuild_candidates``.
+    """
 
     decision_id: str
     ts: float
@@ -301,6 +326,7 @@ class Decision(_Record):
     propensity: float
     predicted_success: float | None = None
     predicted_cost: float | None = None
+    candidate_set: CandidateSet | None = None
 
 
 @dataclass
@@ -327,6 +353,7 @@ RECORD_TYPES: tuple[type[_Record], ...] = (
     PriceTier,
     ModelProfile,
     StepState,
+    CandidateSet,
     Decision,
     Outcome,
 )

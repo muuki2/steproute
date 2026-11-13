@@ -325,6 +325,13 @@ def scrub_decision(d: Decision, opts: ScrubOptions) -> Decision:
         candidates=[_scrub_action(a, opts) for a in d.candidates],
         action=_scrub_action(d.action, opts),
         policy=red(d.policy),
+        candidate_set=None
+        if d.candidate_set is None
+        else dataclasses.replace(
+            d.candidate_set,
+            allow=None if d.candidate_set.allow is None else tuple(map(red, d.candidate_set.allow)),
+            deny=tuple(map(red, d.candidate_set.deny)),
+        ),
     )
 
 
