@@ -2,6 +2,16 @@
 
 *Checked 13 Nov 2026. Prepared for Gate A. Nothing in this file was run against a paid model, and no container was started.*
 
+## Gate A decision
+
+Decided by the maintainer on 13 Nov 2026:
+
+- **Task set approved:** the 150 SWE-bench Verified tasks in the manifest, with the 20-task pilot drawn from them.
+- **Grid: option B, the sparse grid.** Every local configuration and each paid model at its default effort on all 150 tasks, plus the other paid efforts on 30 tasks.
+- **No run is approved yet.** The pilot and every later batch need a separate go-ahead, and the option B estimate is to be redone from the pilot's measured costs before month 2.
+
+The rest of this section is the material the decision was made from.
+
 ## The decision to make
 
 The task set is **150 SWE-bench Verified tasks** with native arm64 evaluation images, and a **20-task pilot** drawn from them (`src/steproute/tasks/manifests/swebench-verified-v1.toml`). The open question is how much of the `(task, model, effort)` grid to run on them. The pool has 35 configurations:
