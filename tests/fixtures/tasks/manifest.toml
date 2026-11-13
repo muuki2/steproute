@@ -1,0 +1,15 @@
+# A tiny self-contained task for the local check backend (tests/test_tasks.py).
+# tiny_add/calc.py has a bug; fix.patch fixes it, wrong.patch does not, bad.patch does not
+# apply, hang.patch makes the tests loop forever. The test file is named check_calc.py so
+# pytest does not collect the deliberately failing test.
+
+[meta]
+name = "tiny"
+backend = "local"
+
+[[task]]
+id = "tiny-add"
+repo = "tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+gold_patch = "fix.patch"
