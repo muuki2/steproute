@@ -402,6 +402,28 @@ test('index.js: listeners pass every waterfall result through, even on malformed
   void svc
 })
 
+test('index.js: the status lines go to stderr only when asked', () => {
+  const written = []
+  const original = process.stderr.write
+  process.stderr.write = (chunk) => (written.push(String(chunk)), true)
+  try {
+    plugin.apply(fakeContext(), { mode: 'shadow' })
+    const quiet = written.length
+    process.env.STEPROUTE_STATUS = 'stderr'
+    plugin.apply(fakeContext(), { mode: 'route' })
+    delete process.env.STEPROUTE_STATUS
+    plugin.apply(fakeContext(), { mode: 'shadow', statusToStderr: true })
+    assert.equal(quiet, 0)
+    assert.deepEqual(
+      written.map((l) => l.trim()),
+      ['steproute 0.1.0: route mode, service http://127.0.0.1:8789', 'steproute 0.1.0: shadow mode, service http://127.0.0.1:8789'],
+    )
+  } finally {
+    process.stderr.write = original
+    delete process.env.STEPROUTE_STATUS
+  }
+})
+
 test('index.js end to end on the fake context', async () => {
   const ctx = fakeContext()
   // Point the plugin at a port nothing listens on: every call is refused, fast.

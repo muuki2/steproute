@@ -1,21 +1,29 @@
 """Run the repository's mock upstream as a scripted coding agent's model, for a real dsh session
 (scripts/dsh_session.sh). Loopback only; no key is checked and nothing leaves the machine.
 
-    uv run python scripts/dsh_mock_upstream.py --out RECEIVED.json
+    uv run python scripts/dsh_mock_upstream.py --out RECEIVED.json [--count-file FILE]
+        [--kill-plan FILE]
 
 Prints ``mock upstream: <base url>`` (the Anthropic Messages root dsh-llm-deepseek appends
 ``/v1/messages`` to) and serves until SIGTERM or SIGINT, then writes what each request asked
-for (model, thinking, effort) to RECEIVED.json.
+for (model, thinking, effort) to RECEIVED.json. With ``--count-file`` it rewrites FILE with the
+number of Messages requests answered so far after each one, so a script can act between two
+model requests. With ``--kill-plan FILE``, once FILE holds ``N PID``, it sends SIGKILL to PID
+when the N-th Messages request arrives, before answering it, so the kill lands at an exact
+point of the session (scripts/dsh_session.sh kills `steproute serve` that way).
 
 Per user turn the scripted model reads ``a.txt``, then ``b.txt`` (one ``read`` tool call per
-step, the tool name of dsh-tool-fs), then answers in one sentence: three steps per turn.
+step, with dsh-tool-fs's tool name and argument), then answers in one sentence: three steps
+per turn.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -42,6 +50,8 @@ def _tool_results_since_user_text(body: dict[str, Any]) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--count-file", type=Path)
+    ap.add_argument("--kill-plan", type=Path)
     args = ap.parse_args(argv)
     counter = {"calls": 0}
 
@@ -51,6 +61,17 @@ def main(argv: list[str] | None = None) -> int:
         done = _tool_results_since_user_text(rec.body)
         counter["calls"] += 1
         n = counter["calls"]
+        if args.count_file is not None:
+            # Counted when the request arrives, before its answer is sent.
+            args.count_file.write_text(str(n))
+        if args.kill_plan is not None and args.kill_plan.exists():
+            try:
+                at, pid = (int(x) for x in args.kill_plan.read_text().split())
+                if n == at:
+                    os.kill(pid, signal.SIGKILL)
+                    print(f"killed pid {pid} as request {n} arrived", file=sys.stderr, flush=True)
+            except (OSError, ValueError) as exc:
+                print(f"kill plan failed: {exc}", file=sys.stderr, flush=True)
         prompt = 1200 + 150 * n
         cached = 0 if n == 1 else 1000
         if done < 2:
@@ -58,7 +79,8 @@ def main(argv: list[str] | None = None) -> int:
             return Reply(
                 kind="tool",
                 tool_name="read",
-                tool_args=json.dumps({"path": name}),
+                # dsh-tool-fs's `read` takes `file_path`, resolved against the session's cwd.
+                tool_args=json.dumps({"file_path": name}),
                 tool_id=f"toolu_mock_{n}",
                 tool_text=f"Reading {name}.",
                 prompt_tokens=prompt,

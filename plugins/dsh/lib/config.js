@@ -33,10 +33,11 @@ export const DEFAULT_MODELS = {
  *   decideTimeoutMs: number,
  *   reportTimeoutMs: number,
  *   routeSubagents: boolean,
+ *   statusToStderr: boolean,
  *   models: Map<string, Route>,
  *   warnings: string[],
  * }} Config
- * @typedef {{ STEPROUTE_MODE?: string, STEPROUTE_URL?: string, STEPROUTE_TOKEN?: string }} Env
+ * @typedef {{ STEPROUTE_MODE?: string, STEPROUTE_URL?: string, STEPROUTE_TOKEN?: string, STEPROUTE_STATUS?: string }} Env
  */
 
 /**
@@ -73,6 +74,10 @@ export function resolveConfig(raw, env = {}) {
     decideTimeoutMs: bounded(o.decideTimeoutMs, 200, 20, 2000),
     reportTimeoutMs: bounded(o.reportTimeoutMs, 500, 50, 5000),
     routeSubagents: o.routeSubagents !== false,
+    // dsh's logger has no exporter in the headless profile, so its lines are never seen
+    // there; this also writes the plugin's two status lines to stderr. Off by default,
+    // because stderr belongs to the terminal UI in interactive profiles.
+    statusToStderr: nonEmpty(env.STEPROUTE_STATUS)?.trim().toLowerCase() === 'stderr' || o.statusToStderr === true,
     models: parseModels(o.models, warnings),
     warnings,
   }

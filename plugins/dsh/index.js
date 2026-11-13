@@ -29,6 +29,7 @@ export function apply(ctx, config) {
       STEPROUTE_MODE: process.env.STEPROUTE_MODE,
       STEPROUTE_URL: process.env.STEPROUTE_URL,
       STEPROUTE_TOKEN: process.env.STEPROUTE_TOKEN,
+      STEPROUTE_STATUS: process.env.STEPROUTE_STATUS,
     },
     // Provider routes with a registered adapter (dsh-llm/src/index.ts:493-500), so a
     // decision is never applied to a route dsh cannot call.
@@ -44,6 +45,13 @@ export function apply(ctx, config) {
       logger?.info(text)
     } catch {
       // no logger
+    }
+    if (cfg.statusToStderr) {
+      try {
+        process.stderr.write(`${text}\n`)
+      } catch {
+        // no stderr
+      }
     }
   }
   say(`steproute ${PLUGIN_VERSION}: ${cfg.mode} mode, service ${cfg.url}`)

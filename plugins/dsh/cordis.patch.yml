@@ -19,6 +19,9 @@
         decideTimeoutMs: 200
         reportTimeoutMs: 500
         routeSubagents: true
+        # Also write the load line and the shutdown summary to stderr (dsh's logger shows
+        # nothing in headless runs). STEPROUTE_STATUS=stderr does the same for one run.
+        statusToStderr: false
         # Catalog model id -> the dsh route that runs it. Decisions naming a model that is not
         # listed here are logged but never applied. To route to a local model, add it here
         # with the provider name of your llm-pi-ai route, and add "ollama" to the service's
