@@ -1,0 +1,26 @@
+# Configuration for `steproute serve` when it serves the Claude Code plugin.
+#   steproute serve --config plugins/claude-code/service/steproute.toml
+# Reference: docs/SERVICE.md (keys) and docs/CLAUDE-CODE.md (why these values).
+
+[server]
+host = "127.0.0.1"
+port = 8787               # the plugin's default service_url is http://127.0.0.1:8787
+
+[catalog]
+# Claude Code runs only Claude models as subagents, so decisions are made among those alone.
+# A sensitive task then has no allowed model (no local model is left) and gets HTTP 503 with
+# "sensitive": true; the plugin leaves that spawn to Claude Code and logs nothing for it.
+providers = ["anthropic"]
+
+[policy]
+kind = "rules"
+rules_config = "rules.toml"
+
+[failopen]
+budget_ms = 50
+# Logged as policy "fail_open:<reason>" when the policy fails; the plugin never applies a
+# fail-open decision, so the spawn keeps Claude Code's own model.
+default = { model = "claude-sonnet-5-5", effort = "medium" }
+
+# [store]
+# path = "~/.steproute/traces"   # the default; `steproute serve --store DIR` overrides it

@@ -59,6 +59,17 @@ pipeline() {
     in_env "$py" pytest -q
   done
 
+  # The Claude Code plugin's hooks module is plain JavaScript tested with Node's own test
+  # runner (no npm packages). Node 18 or later; without it the step is skipped, and so is
+  # tests/test_claude_code_plugin.py inside pytest.
+  step "claude code plugin: node --test"
+  if command -v node > /dev/null 2>&1 &&
+    node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)'; then
+    node --test tests/claude-code/*.test.mjs
+  else
+    echo "skipped: Node 18 or later is not installed, so the plugin's hooks tests did not run"
+  fi
+
   step "build: the wheel installs and runs outside the source tree"
   dist=$(mktemp -d)
   uv build --quiet --out-dir "$dist"

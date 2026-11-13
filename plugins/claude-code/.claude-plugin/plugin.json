@@ -1,0 +1,54 @@
+{
+  "name": "steproute",
+  "displayName": "steproute",
+  "version": "0.1.0",
+  "description": "Logs a steproute routing decision and its outcome for every subagent spawn; in route mode applies the recommended model at the spawn. Shadow mode (log only) by default.",
+  "license": "MIT",
+  "homepage": "https://github.com/muuki2/steproute",
+  "repository": "https://github.com/muuki2/steproute",
+  "keywords": ["routing", "subagents", "traces"],
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "shadow: log decisions and outcomes, change nothing. route: also apply the recommended model and effort when a subagent starts. off: do nothing. The STEPROUTE_MODE environment variable overrides this.",
+      "options": ["shadow", "route", "off"],
+      "default": "shadow"
+    },
+    "service_url": {
+      "type": "string",
+      "title": "Service address",
+      "description": "Base URL of the local steproute serve process. The STEPROUTE_URL environment variable overrides this.",
+      "default": "http://127.0.0.1:8787"
+    },
+    "decide_timeout_ms": {
+      "type": "number",
+      "title": "Decision timeout (ms)",
+      "description": "How long a subagent spawn waits for a decision before going ahead with Claude Code's own choice.",
+      "default": 200,
+      "min": 20,
+      "max": 2000
+    },
+    "report_timeout_ms": {
+      "type": "number",
+      "title": "Outcome report timeout (ms)",
+      "description": "How long the end of a subagent run waits for the outcome to be stored before going on; a report that fails is kept and resent later.",
+      "default": 500,
+      "min": 50,
+      "max": 5000
+    },
+    "billing": {
+      "type": "string",
+      "title": "Billing",
+      "description": "subscription: outcomes record cost_usd = 0 (no per-request charge). api: cost_usd is left for the service to price at catalog rates.",
+      "options": ["subscription", "api"],
+      "default": "subscription"
+    },
+    "route_agent_types": {
+      "type": "string",
+      "title": "Agent types route mode may change",
+      "description": "Comma-separated subagent types whose model route mode may set. Types not listed are logged but keep their own model. Use * for every type.",
+      "default": "general-purpose,Explore,Plan,claude"
+    }
+  }
+}
