@@ -101,13 +101,14 @@ harness can expose. "Late" means reported after the step through `POST /report` 
 
 | Signal | OpenAI proxy (12) | MCP server (13) | Claude Code hooks (14) | dsh plugin (15) | Replay runner (18) |
 |---|---|---|---|---|---|
-| `tests_passed` | late, caller-supplied | late, caller-supplied | from test-runner tool results | from session log | yes, task-level (final step) |
+| `tests_passed` | late, caller-supplied | late, caller-supplied | yes: the last test command a subagent ran (Bash exit status) | from session log | yes, task-level (final step) |
 | `schema_valid` | yes, cascade check on response | late, caller-supplied | no | no | yes, if the task defines a schema |
-| `tool_error` | from tool-call parse failure | late, caller-supplied | yes, from tool results | yes, from session log | yes |
-| `compile_error` | no | late, caller-supplied | from build tool results | from session log | yes, if the task builds |
-| `user_rejected` / `user_rewrote` / `user_approved` | no (no UI) | late, caller-supplied | possible (permission denials; unverified) | yes, from approvals and rejections | no (no user) |
-| `retried` / `retry_count` | yes, repeated request in a session | late, caller-supplied | possible | yes, from session log | no |
-| `judge_score` | optional, late | optional, late | optional | optional | optional |
+| `tool_error` | from tool-call parse failure | late, caller-supplied | yes: any tool call of the subagent's run errored | yes, from session log | yes |
+| `compile_error` | no | late, caller-supplied | no (not implemented) | from session log | yes, if the task builds |
+| `user_rejected` / `user_rewrote` / `user_approved` | no (no UI) | late, caller-supplied | no: denials are counted (`tool_denied_count`) but who denied is not known | yes, from approvals and rejections | no (no user) |
+| `retried` / `retry_count` | yes, repeated request in a session | late, caller-supplied | no | yes, from session log | no |
+| `judge_score` | optional, late | optional, late | no | optional | optional |
 
 The MCP server only receives what the calling agent reports through `report_outcome`, so every
-signal there is caller-supplied.
+signal there is caller-supplied. The Claude Code column is what the plugin of issue 14 reports
+(`docs/CLAUDE-CODE.md`); one outcome covers a whole subagent run.

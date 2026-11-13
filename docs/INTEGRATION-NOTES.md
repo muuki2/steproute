@@ -1055,3 +1055,51 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 - **High** for the two proxy findings: reproduced and covered by tests.
 - **Not verified:** how the shorter task message of our loop changes model behaviour; the pilot measures steps and cost directly.
 
+
+## 12. Issue 14: the Claude Code mod, checked against the docs and in real sessions
+
+*Added by issue 14, checked 2026-11-13.* Claude Code **2.1.323** (`claude --version`), whose bundled `plugin-authoring` skill wrote this build's mod type declarations (`claude-code.d.ts`, "Written by Claude Code 2.1.323"). Docs read the same day: https://code.claude.com/docs/en/plugins/mods/overview, `/plugins/mods/events`, `/plugins/mods/reference`, `/plugins/components`, `/plugins/manifest-reference`, `/sub-agents`. Three real sessions were run (below). The plugin is `plugins/claude-code`, documented in `docs/CLAUDE-CODE.md`.
+
+**Answer.**
+
+- **Sections 1 and 2 hold for 2.1.323.** `agent.spawn` with `next({ ...e, model })` sets a starting subagent's model, and a changed model on a resumed run (`e.resume`) is ignored. `turn.step` carries `e.agentId` for subagent requests, and its result's `usage` has the four token fields plus the answering `model`. Mods need v2.1.287+ and run in `claude -p`. Subagents inherit MCP tools; plugin agents ignore `hooks`, `mcpServers`, `permissionMode` (and `initialPrompt`).
+- **Observed in route mode: the recommended model ran.** Claude Code's own `--output-format json` `modelUsage` listed `claude-sonnet-5-5` for exactly the three subagents' tokens while the main session ran on Haiku, and the plugin's per-subagent sums matched it to the token.
+- **New facts the spike did not record**, each used by the plugin:
+  - `agent.spawn`'s result is `{ model, agentId }`, the model as core resolved it, and the subagent's end is its own `turn.complete` with `agentId` and the run's summed `usage`: a second, per-run usage source next to `turn.step`. In all three sessions the two agreed exactly.
+  - "With nothing configured, a subagent that Claude spawns from your main conversation starts in the background" (sub-agents page). All nine subagents in the sessions ran in the background; their `turn.step` and `turn.complete` events arrived as for foreground ones.
+  - The mod validator (`claude plugin validate`) refuses a module that passes `$` as a value: "$ is always spelled $.noun.event(...) at the call site". `$.env.get` takes literal names only.
+  - `$.http.fetch` gives up only after 30 seconds, and a hook's 10-second budget does not count time inside `$` calls (reference, Limits), so a client must race its own timer.
+  - Per the declarations, "the hooks an agent's spawn was nested in do not hear its start, as at its `turn.step`s". The plugin's `tool.call` hook therefore excludes `Agent`, `Task`, `SendMessage`, `Workflow` and `TeamCreate` by matcher, so no spawn happens inside it. With that, the plugin's `turn.step`, `tool.call` and `turn.complete` hooks all saw the subagents' events.
+- **Correction to section 1's consequence 5 ("no model owns a cache").** A subagent's first request does not read the *parent's* cache, but it can read the cached system prompt and tool definitions that earlier subagents or sessions wrote on the same model: the first subagent request read 4,284 cached tokens (Haiku, run 1) and 4,256 and 7,922 (Sonnet, runs 2 and 3). The plugin still sends `cached_prefix_tokens = 0`, which can only overstate a spawn's cost.
+- **Effort.** In both route runs the engine's effort for the Sonnet subagents' requests was already `medium` (`signals.engine_effort`), the decision's effort, so the `turn.step` effort rewrite never had to act; it is covered by unit tests only.
+
+**Real sessions.** Command shape (`scripts/claude_code_session.sh`), run in a fresh scratch directory outside the repository holding three one-line text files, with a fresh `steproute serve --config plugins/claude-code/service/steproute.toml --port 0 --store <scratch>/traces`:
+
+```
+env -i HOME=... USER=... PATH=... STEPROUTE_MODE=<mode> STEPROUTE_URL=<service> \
+  claude -p "<start three general-purpose subagents, one per file, no model parameter; each reads its file and summarises it in one sentence>" \
+  --plugin-dir <scratch>/plugin --model haiku --tools Agent,Read --allowedTools Agent,Read \
+  --strict-mcp-config --no-session-persistence --output-format json --debug-file <scratch>/debug.log
+```
+
+No API key was in the environment; the sessions ran on the subscription login. Each exited 0.
+
+| Run | Mode | Decisions / outcomes / joined | Recommended | Ran (API-reported) | Tokens per subagent (in / out / cache read / cache write) | Claude Code `modelUsage` |
+|---|---|---|---|---|---|---|
+| 1 | shadow | 3 / 3 / 3 | `claude-sonnet-5-5` medium | `claude-haiku-5-5` (not applied) | 4/158/4284/5447, 4/158/7984/1747, 4/159/7984/1742 | haiku only |
+| 2 | route | 3 / 3 / 3 | `claude-sonnet-5-5` medium | `claude-sonnet-5-5` | 4/160/4256/5394, 4/159/7933/1717, 4/150/7933/1712 | sonnet 12/469/20122/8823 (= the three sums); haiku for the main session |
+| 3 | route (committed code) | 3 / 3 / 3 | `claude-sonnet-5-5` medium | `claude-sonnet-5-5` | 4/160/7922/1706, 4/159/7922/1706, 4/150/7922/1701 | sonnet 12/469/23766/5113 (= the sums) |
+
+Every outcome: two requests per subagent counted via `turn.step`, `turn_usage_matches = true`, one `Read` call, no tool errors, `success = null` (nothing was checked), `cost_usd = 0`, `end_reason = answer`. `steproute traces stats`: `decisions: 3, outcomes: 3, joined: 3, join rate: 100.0%, total cost: $0.0000` for each run. Acceptance criterion 2 passed in all three runs.
+
+**Delay per spawn.** `/decide` measured inside the hook (`signals.decide_ms`): 1 to 5 ms over the nine spawns; Claude Code's debug log timed the `$.http.fetch` calls at 2 to 3 ms. The engine's timing of the whole `agent.spawn` hook ("settled in", worker hop and the engine's own spawn included) was 7.8 to 25.6 ms, the first spawn of a session the slowest. `turn.complete` with the `/report` call: 2 to 21 ms.
+
+**Install timing (criterion 1).** From the committed tree unpacked into an empty scratch directory, with an empty uv cache and uv's tool directories pointed into the scratch directory: `uv tool install --from . steproute` 1 s (the core has no dependencies), `claude plugin validate` 1 s, the service up in under 3 s; under 10 s in all, plus the clone. Not covered, because it would change this machine's setup: a network clone, installing Claude Code and `uv`, signing in, and the marketplace install (`/plugin install steproute --marketplace muuki2/steproute`), which was validated (`claude plugin validate .` passes) but not run.
+
+**Not done or not verified.**
+
+- The `PreToolUse` `updatedInput` fallback (section 1, consequence 2) was neither shipped nor tested (`docs/CLAUDE-CODE.md`, decision 9); its confidence stays medium.
+- The plugin was not run on a Claude Code older than 2.1.323, in the Desktop app or in VS Code, and its status line and `/steproute` were seen only in the debug log (`$.ui.status ... no status row in a headless session; kept here`), since all runs were headless.
+- Resumed runs, aborted runs, test commands, tool errors and the effort rewrite are exercised by unit tests, not by a real session.
+
+**Confidence.** High for the mechanism (docs, this build's declarations, and three sessions whose token counts match Claude Code's own report). Medium for anything that depends on the agent type list and the background default, which the docs say change between versions.
