@@ -1,5 +1,6 @@
 """Core types and logic. Standard library only."""
 
+from steproute.core.labels import Label, LabelConfig, apply_label, label
 from steproute.core.schema import (
     EFFORTS,
     SCHEMA_VERSION,
@@ -28,4 +29,8 @@ __all__ = [
     "UnknownFieldWarning",
     "effort_rank",
     "new_decision_id",
+    "Label",
+    "LabelConfig",
+    "apply_label",
+    "label",
 ]
