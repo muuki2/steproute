@@ -130,6 +130,41 @@ class CommandResult:
     timed_out: bool
 
 
+#: Variables that point git at one particular repository (the list `git rev-parse
+#: --local-env-vars` prints). Git exports them to hooks, and a caller may have set them.
+GIT_LOCAL_ENV_VARS: tuple[str, ...] = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+)
+
+
+def workspace_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment for a command run in a task workspace.
+
+    It is ``env`` (the caller's environment by default) without git's repository-local
+    variables. With ``GIT_DIR`` inherited, a ``git init`` or ``git apply`` in the workspace
+    would act on the caller's repository instead: run from a git hook, it has flipped that
+    repository's ``core.bare``.
+    """
+    base = dict(os.environ if env is None else env)
+    for name in GIT_LOCAL_ENV_VARS:
+        base.pop(name, None)
+    return base
+
+
 def run_command(
     cmd: Sequence[str],
     *,
@@ -138,14 +173,17 @@ def run_command(
     env: Mapping[str, str] | None = None,
     stdin: str | None = None,
 ) -> CommandResult:
-    """Run ``cmd`` in its own process group; on timeout kill the whole group."""
+    """Run ``cmd`` in its own process group; on timeout kill the whole group.
+
+    The command never inherits git's repository-local variables (``workspace_env``).
+    """
     proc = subprocess.Popen(
         list(cmd),
         cwd=cwd,
         stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        env=dict(env) if env is not None else None,
+        env=workspace_env(env),
         start_new_session=True,
     )
     try:

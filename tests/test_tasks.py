@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
@@ -23,7 +24,7 @@ from steproute.tasks import (
     load_manifest,
     run_check,
 )
-from steproute.tasks.check import fetch_rows, load_rows
+from steproute.tasks.check import GIT_LOCAL_ENV_VARS, fetch_rows, load_rows, workspace_env
 from steproute.tasks.estimate import (
     Assumptions,
     build_plans,
@@ -153,6 +154,53 @@ def test_local_keep_workspace(tiny: tuple, tmp_path: Path) -> None:
     LocalBackend(workdir=tmp_path, keep_workspace=True).check(task, patch("fix"))
     (ws,) = tmp_path.iterdir()
     assert "a + b" in (ws / "repo" / "calc.py").read_text()
+
+
+def _outer_repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """A scratch repository with a linked worktree; returns (config file, worktree git dir)."""
+    env = workspace_env()
+    outer = tmp_path / "outer"
+    ident = ["-c", "user.name=tester", "-c", "user.email=tester@example.invalid"]
+    for cmd in (
+        ["git", "init", "-q", str(outer)],
+        ["git", "-C", str(outer), *ident, "commit", "-q", "--allow-empty", "-m", "base"],
+        ["git", "-C", str(outer), "worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side"],
+    ):
+        subprocess.run(cmd, check=True, env=env, capture_output=True)
+    return outer / ".git" / "config", outer / ".git" / "worktrees" / "wt"
+
+
+def test_local_check_leaves_the_callers_repository_alone(
+    tiny: tuple, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Git exports GIT_DIR to hooks. If the workspace's `git init` inherited it, it would act on
+    # that repository and set its core.bare, which happened to this project's own repository
+    # when the test suite ran from the pre-push hook.
+    config, gitdir = _outer_repo_with_worktree(tmp_path)
+    before = config.read_text()
+    assert "bare = false" in before
+    monkeypatch.setenv("GIT_DIR", str(gitdir))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(gitdir / "index"))
+    task, _ = tiny
+    work = tmp_path / "work"
+    work.mkdir()
+    assert LocalBackend(workdir=work).check(task, patch("fix")).passed
+    assert config.read_text() == before
+
+
+def test_workspace_env_drops_every_git_local_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in GIT_LOCAL_ENV_VARS:
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setenv("STEPROUTE_KEEP_ME", "1")
+    env = workspace_env()
+    assert not set(GIT_LOCAL_ENV_VARS) & set(env)
+    assert env["STEPROUTE_KEEP_ME"] == "1"
+    assert "GIT_DIR" not in workspace_env({"GIT_DIR": "x", "A": "b"})
+    # The list is the one git itself reports.
+    listed = subprocess.run(
+        ["git", "rev-parse", "--local-env-vars"], capture_output=True, text=True, env=env
+    ).stdout.split()
+    assert set(listed) <= set(GIT_LOCAL_ENV_VARS)
 
 
 def test_outcome_labelled_from_the_check(tiny: tuple) -> None:

@@ -10,6 +10,12 @@
 # CI_PYTHONS overrides the interpreter list:  CI_PYTHONS=3.12 scripts/ci.sh
 set -euo pipefail
 
+# Git exports GIT_DIR and related variables to hooks. With them set, a test that
+# runs git in a scratch directory acts on this repository instead (a `git init`
+# there once flipped core.bare here). Drop them before anything else runs.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+
 cd "$(git rev-parse --show-toplevel)"
 
 report=0
