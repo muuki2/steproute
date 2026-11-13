@@ -241,6 +241,11 @@ class ModelProfile(_Record):
     price_tiers: tuple[PriceTier, ...] = ()
     effort_map: dict[str, str] = field(default_factory=dict)
     effort_change_keeps_cache: bool = False
+    cache_min_tokens: int = 0
+    latency_base_ms: float | None = None
+    latency_ms_per_input_token: float | None = None
+    latency_ms_per_output_token: float | None = None
+    latency_switch_ms: float | None = None
 
     def prices_for(self, prompt_tokens: int) -> tuple[float, float]:
         """``(price_in, price_out)`` in force for a request with ``prompt_tokens`` of prompt.
@@ -268,6 +273,8 @@ class StepState(_Record):
     task_id: str | None = None
     cached_prefix_tokens: int = 0
     current_model: str | None = None
+    current_effort: str | None = field(default=None, metadata={"enum": (None, *EFFORTS)})
+    failed_attempts: list[Action] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
     sensitive: bool = False
     source: str = field(default="personal", metadata={"enum": SOURCES})
@@ -275,6 +282,8 @@ class StepState(_Record):
     features: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.current_effort is not None:
+            effort_rank(self.current_effort)
         if self.source not in SOURCES:
             raise ValueError(f"unknown source {self.source!r}; expected one of {SOURCES}")
 

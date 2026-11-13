@@ -1,6 +1,20 @@
 """Core types and logic. Standard library only."""
 
 from steproute.core.actions import NoFeasibleAction, enumerate_actions, filter_feasible
+from steproute.core.cost import (
+    AttemptCost,
+    AttemptUsage,
+    CostBreakdown,
+    CostModelError,
+    UsageCost,
+    attempt_latency,
+    expected_cost,
+    owns_cache,
+    planned_usage,
+    price_usage,
+    realized_cost,
+    state_after_failure,
+)
 from steproute.core.export import ExportSummary, export_replay
 from steproute.core.labels import Label, LabelConfig, apply_label, label
 from steproute.core.privacy import (
@@ -30,6 +44,18 @@ __all__ = [
     "NoFeasibleAction",
     "enumerate_actions",
     "filter_feasible",
+    "AttemptCost",
+    "attempt_latency",
+    "AttemptUsage",
+    "CostBreakdown",
+    "CostModelError",
+    "UsageCost",
+    "expected_cost",
+    "owns_cache",
+    "planned_usage",
+    "price_usage",
+    "realized_cost",
+    "state_after_failure",
     "ExportSummary",
     "PrivacyConfig",
     "ScrubOptions",

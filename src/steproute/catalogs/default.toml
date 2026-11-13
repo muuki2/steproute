@@ -16,6 +16,8 @@
 # DeepSeek price_in / price_out are PEAK prices (conservative for spend caps); off-peak is in meta.
 
 # --- Anthropic (cache_write_mult is the 5-minute write; the 1-hour write is in meta) ---
+# cache_min_tokens: a prompt shorter than 512 tokens is silently not cached (notes 7a).
+# DeepSeek does not document a minimum and Ollama has none, so they keep the default 0.
 
 [[model]]
 id = "claude-haiku-5-5"
@@ -30,6 +32,7 @@ efforts = ["low", "medium", "high", "xhigh", "max"]
 effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
 effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
 effort_change_keeps_cache = false
+cache_min_tokens = 512
 verified = true
 
 # Prompts above 100,000 tokens (cache reads and writes included) pay these rates on the whole request.
@@ -58,6 +61,7 @@ efforts = ["low", "medium", "high", "xhigh", "max"]
 effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
 effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
 effort_change_keeps_cache = false
+cache_min_tokens = 512
 verified = true
 
 [model.meta]
@@ -80,6 +84,7 @@ efforts = ["low", "medium", "high", "xhigh", "max"]
 effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
 effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
 effort_change_keeps_cache = false
+cache_min_tokens = 512
 verified = true
 
 [model.meta]
@@ -102,6 +107,7 @@ efforts = ["low", "medium", "high", "xhigh", "max"]
 effort_output_mult = { low = 1.0, medium = 1.0, high = 1.0, xhigh = 1.0, max = 1.0 }
 effort_map = { low = "low", medium = "medium", high = "high", xhigh = "xhigh", max = "max" }
 effort_change_keeps_cache = false
+cache_min_tokens = 512
 verified = true
 
 [model.meta]

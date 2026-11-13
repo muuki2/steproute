@@ -83,7 +83,7 @@ Scrubbing is applied to each exported record:
 - In `features` and `signals`, only booleans, numbers and null are kept. Every string, list
   and nested object is dropped, because those can carry arbitrary text.
 - The secret patterns are run over every remaining string (`harness`, `kind`, `policy`,
-  `current_model`, tool names, model ids, dict keys) and each match is replaced with
+  `current_model`, tool names, model ids including those in `failed_attempts`, dict keys) and each match is replaced with
   `[REDACTED]`.
 
 `PrivacyConfig.salt` and `ScrubOptions.salt` are excluded from `repr`, so logging a config does not leak them.

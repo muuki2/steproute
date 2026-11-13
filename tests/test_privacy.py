@@ -448,3 +448,12 @@ def test_salt_not_in_repr() -> None:
     salt = "salt-" + _chars(_ALNUM, 12)
     assert salt not in repr(PrivacyConfig(hash_text=True, salt=salt))
     assert salt not in repr(ScrubOptions(salt=salt))
+
+
+def test_scrub_redacts_failed_attempt_models() -> None:
+    secret = fake_sk()
+    st = _state(failed_attempts=[Action(secret, "low")], current_effort="low")
+    d = scrub_decision(_dec("1", st), ScrubOptions("k"))
+    assert secret not in json.dumps(d.to_dict())
+    assert d.state.failed_attempts[0].effort == "low"
+    assert d.state.current_effort == "low"

@@ -29,6 +29,9 @@ __all__ = [
 
 _PROFILE_KEYS = {f.name for f in dataclasses.fields(ModelProfile)}
 _TIER_KEYS = {f.name for f in dataclasses.fields(PriceTier)}
+# A latency estimate is all three of these or none; latency_switch_ms is optional on its own.
+_LATENCY_REQUIRED = ("latency_base_ms", "latency_ms_per_input_token", "latency_ms_per_output_token")
+_LATENCY_FIELDS = (*_LATENCY_REQUIRED, "latency_switch_ms")
 
 
 class CatalogError(ValueError):
@@ -82,6 +85,26 @@ def _validate(p: ModelProfile) -> None:
                 raise _fail(mid, name, f"{k!r} must not be negative, got {v}")
             if name == "effort_map" and not v:
                 raise _fail(mid, name, f"{k!r} must map to a non-empty string")
+    # All or nothing: an empty table means "unmeasured, no adjustment"; a partly filled one
+    # would make the cost model fail on the first decision that uses a missing effort.
+    unpriced = [e for e in p.efforts if e not in p.effort_output_mult]
+    if p.effort_output_mult and unpriced:
+        raise _fail(
+            mid,
+            "effort_output_mult",
+            f"has no entry for {unpriced}; give every effort a multiplier (1.0 if unmeasured) "
+            "or leave the table empty",
+        )
+    if p.cache_min_tokens < 0:
+        raise _fail(mid, "cache_min_tokens", f"must not be negative, got {p.cache_min_tokens}")
+    latency = {name: getattr(p, name) for name in _LATENCY_FIELDS}
+    for name, v in latency.items():
+        if v is not None and v < 0:
+            raise _fail(mid, name, f"must not be negative, got {v}")
+    given = [name for name in _LATENCY_REQUIRED if latency[name] is not None]
+    if given and len(given) != len(_LATENCY_REQUIRED):
+        missing = [n for n in _LATENCY_REQUIRED if latency[n] is None]
+        raise _fail(mid, missing[0], f"latency estimate is partial; set all of {_LATENCY_REQUIRED}")
     previous = 0
     for i, t in enumerate(p.price_tiers):
         loc = f"price_tiers[{i}]"

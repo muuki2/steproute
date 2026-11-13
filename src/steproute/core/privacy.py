@@ -312,6 +312,7 @@ def scrub_decision(d: Decision, opts: ScrubOptions) -> Decision:
         task_id=None if s.task_id is None else keyed_hash(opts.salt, "task:" + s.task_id),
         kind=red(s.kind),
         current_model=None if s.current_model is None else red(s.current_model),
+        failed_attempts=[_scrub_action(a, opts) for a in s.failed_attempts],
         tools=[red(t) for t in s.tools],
         task_text=None,
         features=_scrub_free(s.features, opts),
