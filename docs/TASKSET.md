@@ -1,6 +1,6 @@
 # Task set for the replay grid (issue 17)
 
-*Checked 13 Nov 2026. Prepared for Gate A. Nothing in this file was run against a paid model, and no container was started.*
+*Checked 13 Nov 2026. Prepared for Gate A. Nothing in this file was run against a paid model. Section 8 records what issue 56 then ran on the real machine the same evening: the harness, the pilot images and a local model.*
 
 ## Gate A decision
 
@@ -213,8 +213,8 @@ steproute tasks estimate [--plan dense|sparse|small|pilot] [--tasks 150] [--per-
 | Effort steps multiplier | none and low 1.1, the rest 1.0 | | | assumed. Public Claude runs changed by under 15% across efforts |
 | Cost cap per run | $3 | | | measured: mini-SWE-agent's SWE-bench config. A capped run counts as a failure |
 | Local context cap | 32,768 | | | decision D2. A local run whose prompt passes it ends as a failure |
-| Local throughput (prefill / generation, tokens per second) | qwen3-coder:30b 750 / 60; gpt-oss:20b 500 / 50; qwen3.5:9b 400 / 40; devstral:24b 200 / 17 | | | qwen3-coder measured (omlx.ai, M4 Pro 48 GB); gpt-oss and qwen3.5 derived from llama.cpp benchmark threads 15396 and 4167; devstral assumed |
-| Container time per run | 120 s | | | assumed |
+| Local throughput (prefill / generation, tokens per second) | qwen3-coder:30b 750 / 60; gpt-oss:20b 500 / 50; qwen3.5:9b 400 / 40; devstral:24b 200 / 17 | | | qwen3-coder measured (omlx.ai, M4 Pro 48 GB); gpt-oss and qwen3.5 derived from llama.cpp benchmark threads 15396 and 4167; devstral assumed. qwen3.5:9b (effort none) measured here by issue 56: 32-39 output tokens per second over whole-call time with 96% of the prompt read from Ollama's prefix cache, 2.8-3.9 s per agent step including the command |
+| Container time per run | 120 s | | | assumed; the harness check alone measured 18-85 s per pilot task (median about 21 s) on this Mac (issue 56), so 120 s is conservative |
 | DeepSeek prices | peak | | | catalog. Off-peak (outside 01:00-04:00 and 06:00-10:00 UTC on weekdays) is half |
 
 **Calibration.** At Claude 4.5/4.6 prices, the central scenario reproduces the published mean cost per instance of the same mini-SWE-agent runs on all of Verified (`tests/test_tasks.py::test_central_scenario_reproduces_published_costs`):
@@ -316,7 +316,7 @@ The estimates assume mini-SWE-agent. A scaffold that condenses history, or uses 
    - Write them into the catalog's `effort_output_mult` (issue 4 placeholders).
 3. **Success rate per stratum**, which tests whether the public-panel strata predict our pool.
 4. **How often local runs hit the 32K cap** (the estimate is about 30%), and their wall time.
-5. **Gold and empty validation of all 20 images.** Free, Docker only. The gold patch must pass and the empty patch must fail, which matters most for the 52 Epoch images (5 of them in the pilot).
+5. **Gold and baseline validation of all 20 images.** Free, Docker only. The gold patch must pass and the baseline patch (`--patch baseline`: no code change, but the tests run) must fail, which matters most for the 52 Epoch images (5 of them in the pilot). `--patch empty` is no validation: the harness skips an empty patch without running anything. Done by issue 56; the table is in section 8.
 6. **Run-to-run noise**, if approved (question 12): two extra repeats of Haiku medium and qwen3-coder on the 20 tasks, about $2.
 
 ## 6. What task-level labels give, and what they do not
@@ -354,14 +354,15 @@ steproute tasks check tiny-add --manifest tests/fixtures/tasks/manifest.toml --p
 PASSED  tiny-add: exit code 0 (118 ms)
 
 steproute tasks fetch                         # 500 Verified rows, about 9 MB, into .cache/steproute/
-steproute tasks check django__django-11815 --patch gold \
-    --harness "uvx --from swebench==5.0.2 python -m swebench.harness.run_evaluation"
+scripts/install_swebench.sh                   # swebench==5.0.2, pinned, into .cache/steproute/swebench-env
+steproute tasks check django__django-11815 --patch gold       # PASSED, about 20 s
+steproute tasks check django__django-11815 --patch baseline   # FAILED: the unfixed code fails its tests
 ```
 
 Exit codes:
 
 - `0` passed;
-- `1` failed, patch not applied or timeout;
+- `1` failed (`empty` and `baseline` should give this), patch not applied or timeout;
 - `3` the check itself errored;
 - `2` usage error.
 
@@ -379,23 +380,55 @@ The swebench backend is tested against a stand-in harness script (`tests/fixture
 - both log layouts (5.0.x `logs/run_evaluation` and the unreleased `logs/evaluation`);
 - the arm64 image override.
 
-## 8. What cannot be verified here
+## 8. What was verified on the real machine, and what still cannot be
 
-All of these need Docker running, a download of evaluation images, or money:
+### 8.1 Tested on 13 Nov 2026 (issue 56)
 
-- **That the official harness runs on this Mac.** The README calls arm64 "experimental". The harness has not been run here, and the Docker daemon was not started.
-- **That the arm64 images grade like the x86_64 ones.**
-  - The official arm64 images date from April 2025. The dataset's `eval_script` was regenerated in August 2026 for the x86_64 images.
-  - Epoch says its arm64 builds are untested.
-  - Gold and empty validation in the pilot checks this, and costs nothing but Docker time.
-- **Disk.**
-  - Images are about 0.7-1.9 GB compressed each, with shared layers.
-  - The SWE-bench docs ask for 120 GB free.
-  - Cheapest-first, configuration-major order (issue 18) reuses every task image across months. Either keep all 150 images, up to about 150 GB, or pull per batch.
-- **Wall time per container check on the Mac.** Assumed to be 120 s.
+Docker Desktop 28.0.4 (arm64, an 8 GB VM) on the M4 Pro, the official harness `swebench==5.0.2` installed by `scripts/install_swebench.sh`, the dataset rows at revision `78f471bf` (the manifest's pin; the Hub reported the same sha). Evidence and harness output: `docs/INTEGRATION-NOTES.md` section 14.
+
+- **The official harness runs on this Mac**, one instance at a time, against a native arm64 image named in a one-row dataset. No emulation, no harness flag.
+- **Images: all 20 pilot images pulled.** 15 official from Docker Hub with `docker pull`; the 5 Epoch images from GHCR with `scripts/fetch_ghcr_image.py`, because Docker Desktop's pull got `403 Forbidden` on the GHCR token request (it presents the stored `ghcr.io` login; an anonymous token works). Compressed 0.72-1.15 GB each, 19.1 GB in all; unpacked 2.4-4.0 GB each as `docker image ls` shows them; the Docker image store grew by 15.0 GB for all 20 (`docker system df`, shared layers stored once). Pull time 105-478 s per official image and 211-673 s per Epoch image, measured while about 40 GB of Ollama models downloaded on the same line, so these are upper bounds. None failed to run on arm64.
+- **Grading: 19 of 20 grade correctly, 1 does not.** For each task the gold patch and the baseline patch (`--patch baseline`: one inert new file, so the tests run on the unchanged code) went through `steproute tasks check`. `--patch empty` never reaches the harness (it skips empty patches) and is shown only for completeness.
+
+| Task | Stratum | Image source | Size (GB) | Gold | Empty | Baseline | s (gold / baseline) |
+|---|---|---|---|---|---|---|---|
+| `astropy__astropy-13977` | hard | Epoch | 0.90 | passed (F2P 20/20, P2P 322/322) | failed (not run) | failed (F2P 0/20, P2P 322/322) | 79 / 76 |
+| `astropy__astropy-14096` | medium | Epoch | 0.90 | passed (F2P 1/1, P2P 426/426) | failed (not run) | failed (F2P 0/1, P2P 426/426) | 64 / 85 |
+| `astropy__astropy-14309` | easy | official | 1.03 | passed (F2P 1/1, P2P 141/141) | failed (not run) | failed (F2P 0/1, P2P 141/141) | 42 / 41 |
+| `django__django-11728` | hard | Epoch | 0.96 | passed (F2P 2/2, P2P 44/44) | failed (not run) | failed (F2P 1/2, P2P 43/44) | 21 / 22 |
+| `django__django-11815` | easy | official | 1.07 | passed (F2P 2/2, P2P 44/44) | failed (not run) | failed (F2P 0/2, P2P 44/44) | 20 / 21 |
+| `django__django-14771` | medium | Epoch | 1.03 | passed (F2P 1/1, P2P 60/60) | failed (not run) | failed (F2P 0/1, P2P 60/60) | 25 / 23 |
+| `pallets__flask-5014` | easy | official | 0.85 | passed (F2P 1/1, P2P 59/59) | failed (not run) | failed (F2P 0/1, P2P 59/59) | 22 / 21 |
+| `psf__requests-1921` | hard | official | 0.80 | failed (F2P 6/6, P2P 104/107) **WRONG** | failed (not run) | failed (F2P 5/6, P2P 104/107) | 46 / 45 |
+| `pytest-dev__pytest-5787` | hard | official | 0.82 | passed (F2P 2/2, P2P 123/123) | failed (not run) | failed (F2P 0/2, P2P 123/123) | 24 / 24 |
+| `pytest-dev__pytest-7324` | medium | Epoch | 0.72 | passed (F2P 3/3, P2P 58/58) | failed (not run) | failed (F2P 0/3, P2P 58/58) | 22 / 21 |
+| `scikit-learn__scikit-learn-25747` | hard | official | 1.15 | passed (F2P 1/1, P2P 14/14) | failed (not run) | failed (F2P 0/1, P2P 14/14) | 20 / 20 |
+| `scikit-learn__scikit-learn-26323` | medium | official | 1.15 | passed (F2P 1/1, P2P 188/188) | failed (not run) | failed (F2P 0/1, P2P 188/188) | 21 / 19 |
+| `sphinx-doc__sphinx-10614` | unsolved | official | 1.00 | passed (F2P 1/1, P2P 5/5) | failed (not run) | failed (F2P 0/1, P2P 5/5) | 21 / 21 |
+| `sphinx-doc__sphinx-7889` | medium | official | 0.94 | passed (F2P 1/1, P2P 5/5) | failed (not run) | failed (F2P 0/1, P2P 5/5) | 19 / 18 |
+| `sphinx-doc__sphinx-8475` | easy | official | 0.94 | passed (F2P 1/1, P2P 17/17) | failed (not run) | failed (F2P 0/1, P2P 17/17) | 21 / 21 |
+| `sphinx-doc__sphinx-8638` | hard | official | 0.94 | passed (F2P 1/1, P2P 34/34) | failed (not run) | failed (F2P 0/1, P2P 34/34) | 20 / 19 |
+| `sympy__sympy-13647` | easy | official | 0.99 | passed (F2P 1/1, P2P 76/76) | failed (not run) | failed (F2P 0/1, P2P 76/76) | 23 / 22 |
+| `sympy__sympy-15599` | hard | official | 0.99 | passed (F2P 1/1, P2P 80/80) | failed (not run) | failed (F2P 0/1, P2P 80/80) | 23 / 22 |
+| `sympy__sympy-19346` | medium | official | 0.99 | passed (F2P 1/1, P2P 40/40) | failed (not run) | failed (F2P 0/1, P2P 40/40) | 19 / 19 |
+| `sympy__sympy-21596` | unsolved | official | 0.99 | passed (F2P 1/1, P2P 46/46) | failed (not run) | failed (F2P 0/1, P2P 46/46) | 23 / 23 |
+
+  - **`psf__requests-1921` grades wrongly: the gold patch fails** (official image). Every FAIL_TO_PASS test passes, but 3 of 107 PASS_TO_PASS tests fail, so the task is "not resolved" even for the reference fix. In the harness output: `test_POSTBIN_GET_POST_FILES_WITH_DATA` fails with `TypeError: '...' object (type: <class 'str'>) must be callable`, because the image has pytest 8.3.4 (the test uses the string form of `pytest.raises`, removed in pytest 5); `test_mixed_case_scheme_acceptable` and `test_pyopenssl_redirect` fail with `SSLError: CERTIFICATE_VERIFY_FAILED` on requests to `https://httpbin.org` (the 2014 code's bundled certificates do not verify today's chain). The baseline also passes 5 of the 6 FAIL_TO_PASS tests, so only one test separates a fix from no fix. **No model can pass this task on this image**: drop it from the pilot or count it as broken in the report (a question for the maintainer).
+  - `django__django-11728` (Epoch) grades correctly, but its baseline is not the dataset's: one FAIL_TO_PASS test (`test_app_not_found`) already passes and one PASS_TO_PASS test (`test_builtin_fields`) fails before the fix. The direction of the grade is right (gold passes, baseline fails).
+  - Every other task shows the textbook signature: gold passes everything, baseline fails exactly the FAIL_TO_PASS tests and passes every PASS_TO_PASS test. That includes the other four Epoch images, which their authors call untested.
+- **Seconds per check: 18-85 s** (median about 21 s; about 15 s of each is the harness stopping its container). The astropy images are the slowest (41-85 s). This replaces the 120 s assumed in section 3 for the check; the agent's own container time is in `docs/REPLAY.md`.
+- **Local throughput of `qwen3.5:9b`** (effort `none`) in the agent loop: 32-39 output tokens per second over whole-call time, 2.8-3.9 s per step including the command, with 96% of prompt tokens read from Ollama's prefix cache. One run hit the 32K cap after 54 steps (30,657 prompt tokens), on a task estimated "long".
+- **Contamination, seen directly:** in one local run `qwen3.5:9b` submitted a patch byte-identical to the gold patch of `pallets__flask-5014` (same blob hash `1aa82562`, same error message).
+
+### 8.2 Still not verified
+
+Money, or more time on the machine than issue 56 had:
+
+- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do, except `psf__requests-1921`; the other 130 images of the full set were not pulled or validated. Validate each with `--patch gold` and `--patch baseline` before its first paid run.
+- **Disk for all 150 images.** Extrapolating the pilot: about 75 GB in Docker's store (0.75 GB per image after sharing), well within the VM's 900 GB. The pre-flight's free-disk line measures the host disk at the output directory, not the Docker VM's disk.
 - **Every per-run cost number for the 5.5 and 5.2 Claude models and the current DeepSeek models.** These are derived from older analogs and must be measured in the pilot.
 - **That prompt caching works end to end against the live Anthropic API** through the proxy (sensitivity 1 above). The proxy's breakpoints are tested against a mock only.
-- **Local throughput** for gpt-oss:20b, qwen3.5:9b and devstral:24b on the M4 Pro specifically.
+- **Local throughput** of `gpt-oss:20b`, `qwen3-coder:30b` and `devstral:24b` in the agent loop: they passed the one-call tool test (issue 56; all four local models PASS) but ran no task.
 
 ## 9. Open questions for the maintainer
 
