@@ -45,7 +45,7 @@ pipeline() {
   local py dist
   for py in $pythons; do
     step "python $py: install from uv.lock"
-    UV_PROJECT_ENVIRONMENT=".ci/py$py" uv sync --locked --extra dev --extra proxy --extra mcp --python "$py" --quiet
+    UV_PROJECT_ENVIRONMENT=".ci/py$py" uv sync --locked --extra dev --extra proxy --extra mcp --extra ml --python "$py" --quiet
   done
 
   step "ruff"

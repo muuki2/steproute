@@ -21,6 +21,7 @@ The policy never writes to the trace store. It returns a `Decision`; the caller 
 | Protocol | Methods | Notes |
 |---|---|---|
 | `Predictor` | `predict(state, action_step) -> float` | Success probability of one `(model, effort)` step (`escalate_to` is `None`). Must return a number in [0, 1]; anything else raises `CostModelError`. |
+| `BatchPredictor` | `predict`, plus `predict_many(pairs) -> Sequence[float]` | Optional. `predict_many([(state, step), ...])` returns what `predict` returns for each pair, in order. `ScoredPolicy` calls it once per decision, with one pair per distinct chain prefix, when the predictor has it, and `predict` once per prefix otherwise. `runtime_checkable`; a `Predictor` without it is unchanged. |
 | `UpdatablePredictor` | `predict`, plus `update(decision, outcome) -> None` | `update` is optional: a `Predictor` without it is fine. `runtime_checkable`. |
 | `Policy` | `decide(state) -> Decision`, `report(outcome) -> None` | Implemented by `ScoredPolicy` and `FixedPolicy`; issue 8's rule baseline implements it too. |
 
@@ -186,7 +187,7 @@ Memory bound: a compact pending decision takes about 0.7 KB of its own (measured
 ## Limitations
 
 - **Deterministic predictors only, for exact propensities.** The propensity formula assumes the greedy choice is a deterministic function of the state. A predictor that samples (Thompson sampling, issue 28) makes the greedy choice random, and the logged propensity is then wrong. Such a policy needs its own propensity estimate. Within one decision `predict` is called once per distinct prefix, so a sampling predictor at least gets one draw per step.
-- **Predictor call count.** `predict` is called once per chain prefix: 555 times per decision at depth 2 on the default catalog. Cheap for table or rule predictors, too slow for a model with per-call overhead (LightGBM, a GNN). Those need a batched predict, or distillation to a table (issue 27); the protocol can gain an optional batch method without breaking anything.
+- **Predictor call count.** `predict` is called once per chain prefix: 555 times per decision at depth 2 on the default catalog. Cheap for table or rule predictors, too slow for a model with per-call overhead (LightGBM, a GNN). Those need a batched predict, or distillation to a table (issue 27). The protocol has the optional batch method (`BatchPredictor.predict_many`, `tests/test_policy_batch.py`: the batch path returns exactly what the per-call path returns). Measured for the LightGBM predictor of issue 21 in `docs/MODEL-CARD-TABULAR.md`.
 - **Latency is not part of the rule.** The cost model can estimate latency, but the policy minimises USD only. No default profile carries a latency estimate yet.
 - **One output estimate per decision**, the same for every model, adjusted only by the effort multiplier; the default is a placeholder.
 - **`report` memory is per process.** Pending decisions are lost on restart; outcomes reported afterwards are counted as unknown.

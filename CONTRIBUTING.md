@@ -3,11 +3,11 @@
 ## Setup
 
 ```
-uv sync --extra dev
+uv sync --extra dev --extra ml
 git config core.hooksPath .githooks
 ```
 
-The second line enables the pre-push hook, which runs the CI pipeline before anything leaves your machine.
+`--extra ml` installs LightGBM for the tabular predictor (`steproute.ml`); its tests are skipped without it. The second line enables the pre-push hook, which runs the CI pipeline before anything leaves your machine.
 
 ## CI is local
 

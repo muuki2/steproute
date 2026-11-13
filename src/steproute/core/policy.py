@@ -48,6 +48,7 @@ __all__ = [
     "DEFAULT_EST_OUTPUT_TOKENS",
     "ENUMERATION_VERSION",
     "EST_OUTPUT_FEATURE",
+    "BatchPredictor",
     "CandidateSetMismatch",
     "CandidateSpec",
     "FixedPolicy",
@@ -91,6 +92,20 @@ class Predictor(Protocol):
     """
 
     def predict(self, state: StepState, action_step: Action) -> float: ...
+
+
+@runtime_checkable
+class BatchPredictor(Predictor, Protocol):
+    """A predictor that can score many steps at once. ``predict_many`` is optional.
+
+    ``predict_many(pairs)`` returns, for each ``(state, action_step)`` in order, exactly what
+    ``predict(state, action_step)`` returns (same states, same contract: a number in [0, 1]).
+    ``ScoredPolicy`` calls it once per decision, with one pair per distinct chain prefix, when
+    the predictor has it; a model with per-call overhead (LightGBM, a GNN) needs this to fit
+    the latency budget. A ``Predictor`` without it is called once per prefix, as before.
+    """
+
+    def predict_many(self, pairs: Sequence[tuple[StepState, Action]]) -> Sequence[float]: ...
 
 
 @runtime_checkable
@@ -335,8 +350,13 @@ class _Scorer:
         state: StepState,
         est_output_tokens: float,
         predict: Callable[[StepState, Action], float],
+        predict_many: Callable[[Sequence[tuple[StepState, Action]]], Sequence[float]] | None = None,
     ) -> tuple[tuple[int, ...], list[float], list[float]]:
-        """``(feasible indices, expected cost per feasible action, overall success per one)``."""
+        """``(feasible indices, expected cost per feasible action, overall success per one)``.
+
+        With ``predict_many`` the predictor is called once, on every distinct chain prefix in
+        first-visit order, instead of once per prefix; the values are the same by contract.
+        """
         feasible = self.feasible(state)
         n_nodes = len(self.step)
         p_node = [math.nan] * n_nodes
@@ -349,6 +369,7 @@ class _Scorer:
         prices: dict[tuple[Action, bool, int], float] = {}
         costs: list[float] = []
         succ: list[float] = []
+        todo: list[int] = []
         for i in feasible:
             path = self.paths[i]
             for node in path:
@@ -368,7 +389,10 @@ class _Scorer:
                 state_in[node] = s
                 step = self.step[node]
                 profile = self.profile[node]
-                p_node[node] = _check_p(predict(s, step), step)
+                if predict_many is None:
+                    p_node[node] = _check_p(predict(s, step), step)
+                else:
+                    todo.append(node)
                 warm = owns_cache(s, step, profile)
                 pkey = (step, warm, s.cached_prefix_tokens if warm else -1)
                 price = prices.get(pkey)
@@ -377,6 +401,21 @@ class _Scorer:
                     price = price_usage(profile, usage).total_usd
                     prices[pkey] = price
                 c_node[node] = price
+        if predict_many is not None and todo:
+            pairs: list[tuple[StepState, Action]] = []
+            for n in todo:
+                st = state_in[n]
+                assert st is not None
+                pairs.append((st, self.step[n]))
+            values = predict_many(pairs)
+            if len(values) != len(todo):
+                raise CostModelError(
+                    f"predict_many returned {len(values)} values for {len(todo)} steps"
+                )
+            for node, value in zip(todo, values, strict=True):
+                p_node[node] = _check_p(value, self.step[node])
+        for i in feasible:
+            path = self.paths[i]
             # Same fold, in the same order, as expected_cost, so the floats agree exactly.
             rest = 0.0
             for node in reversed(path[1:]):
@@ -529,6 +568,10 @@ class ScoredPolicy:
         self._scorer = _Scorer(self.catalog, self.spec)
         self.fingerprint = self.spec.fingerprint(self.catalog)
         self._predict = predictor.predict
+        many = getattr(predictor, "predict_many", None)
+        self._predict_many: (
+            Callable[[Sequence[tuple[StepState, Action]]], Sequence[float]] | None
+        ) = many if callable(many) else None
         update = getattr(predictor, "update", None)
         self._update: Callable[[Decision, Outcome], None] | None = (
             update if callable(update) else None
@@ -560,7 +603,7 @@ class ScoredPolicy:
         # predictor and the logged Decision all see the marked state.
         marked = mark_before_routing(state, self.privacy)
         est = _output_tokens(marked, self._estimator)
-        return (marked, *self._scorer.score(marked, est, self._predict))
+        return (marked, *self._scorer.score(marked, est, self._predict, self._predict_many))
 
     def score(self, state: StepState) -> tuple[ScoredAction, ...]:
         """Every feasible action with its expected cost and success, in enumeration order."""
