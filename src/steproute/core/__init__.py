@@ -1,5 +1,6 @@
 """Core types and logic. Standard library only."""
 
+from steproute.core.actions import NoFeasibleAction, enumerate_actions, filter_feasible
 from steproute.core.export import ExportSummary, export_replay
 from steproute.core.labels import Label, LabelConfig, apply_label, label
 from steproute.core.privacy import (
@@ -26,6 +27,9 @@ from steproute.core.schema import (
 from steproute.core.store import TraceStore
 
 __all__ = [
+    "NoFeasibleAction",
+    "enumerate_actions",
+    "filter_feasible",
     "ExportSummary",
     "PrivacyConfig",
     "ScrubOptions",
