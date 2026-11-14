@@ -1,0 +1,61 @@
+# Six tiny local tasks for the dataset release tests (tests/test_dataset.py). All are the
+# tiny_add task of tests/fixtures/tasks; the scripted mock agent reads the TASK-KEY in the
+# prompt and writes the right fix for every key except "c", which gets a wrong one.
+
+[meta]
+name = "dataset-fixture"
+backend = "local"
+
+[[task]]
+id = "add-a"
+stratum = "easy"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: a. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-b"
+stratum = "easy"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: b. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-c"
+stratum = "medium"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: c. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-d"
+stratum = "medium"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: d. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-e"
+stratum = "hard"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: e. add() in calc.py subtracts instead of adding; fix it."
+
+[[task]]
+id = "add-f"
+stratum = "hard"
+pilot = true
+repo = "../tasks/tiny_add"
+test_cmd = ["{python}", "check_calc.py"]
+timeout_s = 60
+prompt = "TASK-KEY: f. add() in calc.py subtracts instead of adding; fix it."
