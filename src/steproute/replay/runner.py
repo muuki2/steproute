@@ -605,9 +605,8 @@ class Runner:
         self._check_plan_file()
         # Always present after a real run: an empty ledger is the record that no paid call
         # was made (a local-only run used to leave no ledger at all).
-        assert self.ledger.mirror is not None
-        self.ledger.mirror.parent.mkdir(parents=True, exist_ok=True)
-        self.ledger.mirror.touch(exist_ok=True)
+        self.out.mkdir(parents=True, exist_ok=True)
+        (self.out / "ledger.jsonl").touch(exist_ok=True)
         self.journal = Journal.open(self.out / "runs.jsonl")
         provs = self.plan.paid_providers()
         self.guard = CapGuard(
@@ -691,9 +690,9 @@ class Runner:
         if self.deps.local_models is not None:
             self.deps.local_models.unload_all()
         self.say(f"replay: wrote {pool} run(s) to grid.jsonl and {held} to grid-holdout.jsonl")
-        if self.ledger is not None and self.ledger.mirror is not None:
+        if self.ledger is not None:
             self.ledger.refresh()
-            mine = Ledger(self.ledger.mirror)
+            mine = Ledger(self.out / "ledger.jsonl")
             for (prov, month), usd in sorted(mine.by_month().items()):
                 every = self.ledger.by_month().get((prov, month), 0.0)
                 self.say(

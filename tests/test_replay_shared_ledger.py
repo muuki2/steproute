@@ -552,3 +552,20 @@ def test_two_runners_in_two_directories_cannot_jointly_pass_a_cap_or_a_total(
     # no reservation is left behind
     shared = Ledger(ledger)
     assert shared.live_reservations() == []
+
+
+def test_a_shared_ledger_configured_inside_the_directory_is_written_once(tmp_path: Path) -> None:
+    from replay_harness import build, runner
+    from steproute.replay.config import ReplayConfig
+
+    out = tmp_path / "out"
+    plan, manifest = build(tmp_path, [("qwen3-coder:30b", "medium")])
+    cfg = ReplayConfig(environment="local", manage_ollama=False)
+    led = Ledger(out / "ledger.jsonl", out=out, mirror=out / "ledger.jsonl")
+    assert led.mirror is None
+    led.settle(led.intend("anthropic", 1.0, "r1"), 0.5)
+    assert len(read_lines(out / "ledger.jsonl")[0]) == 2  # not doubled
+    r = runner(plan, manifest, cfg, out, environ={}, ledger_path=out / "ledger.jsonl")
+    r.deps.workspace = lambda task: (_ for _ in ()).throw(OSError("no workspace in this test"))
+    r.run(execute=True)  # the directory's spend is the shared ledger: nothing unknown
+    assert Ledger(out / "ledger.jsonl").spent_total("anthropic") == pytest.approx(0.5)
