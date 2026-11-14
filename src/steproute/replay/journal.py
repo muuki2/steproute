@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
     fcntl = None  # type: ignore[assignment]
 
 __all__ = [
+    "DEFERRED",
     "LABELLED",
     "RETRYABLE",
     "STATUSES",
@@ -39,9 +40,14 @@ __all__ = [
 #: Unlabelled (``success = null``, never a model failure): ``provider_error``, ``infra_error``,
 #: ``interrupted`` (all retried, with a bound), ``blocked_sensitive`` and ``config_mismatch``
 #: (never retried: the same thing would happen again).
+#: Deferred (``success = null``, the cell stays pending, not retried in this invocation and
+#: not counted against ``max_retries``; a later resume runs it again): ``budget_stop`` (the run
+#: reached a reduced budget given from the provider's last headroom) and ``balance_stop`` (the
+#: provider said the account is out of funds).
 LABELLED = ("passed", "failed", "run_cap", "step_limit", "context_limit", "wall_time")
 RETRYABLE = ("provider_error", "infra_error", "interrupted")
-STATUSES = (*LABELLED, *RETRYABLE, "blocked_sensitive", "config_mismatch")
+DEFERRED = ("budget_stop", "balance_stop")
+STATUSES = (*LABELLED, *RETRYABLE, *DEFERRED, "blocked_sensitive", "config_mismatch")
 
 CellKey = tuple[str, str, str, int]  # task_id, model, effort, repeat
 
@@ -107,7 +113,7 @@ class Attempt:
 
     @property
     def terminal(self) -> bool:
-        return self.status is not None and self.status not in RETRYABLE
+        return self.status is not None and self.status not in (*RETRYABLE, *DEFERRED)
 
 
 @dataclass

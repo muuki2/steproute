@@ -24,7 +24,7 @@ from typing import Any
 
 from steproute.collectors.mock_upstream import MockUpstream, Received, Reply
 from steproute.core.catalog import load_default_catalog
-from steproute.replay.config import Limits, ProviderConfig, ReplayConfig
+from steproute.replay.config import Limits, ProviderConfig, ReplayConfig, Schedule
 from steproute.replay.plan import ReplayPlan, load_plan_file
 from steproute.replay.runner import Runner, RunnerDeps
 from steproute.tasks.estimate import load_assumptions
@@ -119,9 +119,15 @@ def config_for(
     caps: dict[str, float] | None = None,
     limits: Limits | None = None,
     paid: int = 1,
+    totals: dict[str, float] | None = None,
+    schedules: dict[str, Schedule] | None = None,
 ) -> ReplayConfig:
+    """A config on the mock. Tests that are not about the off-peak schedule run DeepSeek at
+    any hour (``schedules = {}``); the schedule's own tests pass the default explicitly."""
     return ReplayConfig(
-        caps=caps or {"anthropic": 80.0, "deepseek": 20.0},
+        caps=caps or {"anthropic": 80.0, "deepseek": 10.0},
+        totals=totals if totals is not None else {"deepseek": 10.0},
+        schedules=schedules if schedules is not None else {},
         limits=limits or Limits(call_backoff_s=0.0, cache_canary_runs=0),
         providers={
             "anthropic": ProviderConfig(

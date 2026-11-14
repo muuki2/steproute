@@ -199,7 +199,12 @@ def test_output_lock_is_exclusive(tmp_path: Path) -> None:
 
 def test_config_defaults_are_the_safe_ones() -> None:
     cfg = load_replay_config(None)
-    assert dict(cfg.caps) == dict(DEFAULT_CAPS) == {"anthropic": 80.0, "deepseek": 20.0}
+    assert dict(cfg.caps) == dict(DEFAULT_CAPS) == {"anthropic": 80.0, "deepseek": 10.0}
+    assert dict(cfg.totals) == {"deepseek": 10.0}  # $10 in total, not a month (issue 57)
+    assert cfg.total("anthropic") is None and cfg.total("ollama") is None
+    assert cfg.schedule("deepseek").offpeak_only and not cfg.schedule("anthropic").offpeak_only
+    assert cfg.start_margin("deepseek") == cfg.limits.run_timeout_s == 7200
+    assert cfg.limits.min_run_budget_usd == 0.5
     assert cfg.limits.run_cap_usd == 3.0
     assert cfg.provider("anthropic").api_key_env == "ANTHROPIC_API_KEY"
     assert cfg.cap("ollama") is None
@@ -320,8 +325,13 @@ def test_pilot_stage_gate(tmp_path: Path, ratio: float, cut: bool) -> None:
     gate = json.loads((tmp_path / "gate.json").read_text())
     assert gate["cut"] is cut
     assert gate["r"] == pytest.approx(ratio)
-    stage2_tasks = {s.task_id for s in r._pending() if s.stage == 2 and not s.local}
-    assert len(stage2_tasks) == (10 if cut else 20)
+    pending = [s for s in r._pending() if s.stage == 2]
+    assert len({s.task_id for s in pending if s.provider == "anthropic"}) == (10 if cut else 20)
+    # The gate protects Anthropic's cap only. DeepSeek has its own budget and keeps every
+    # task and every configuration, whatever the gate decides.
+    deepseek = [s for s in pending if s.provider == "deepseek"]
+    assert len({s.task_id for s in deepseek}) == 20
+    assert len(deepseek) == 100
 
 
 def test_the_config_example_in_the_docs_loads(tmp_path: Path) -> None:

@@ -34,9 +34,11 @@ from steproute.collectors.proxy.source import InProcessSource
 from steproute.collectors.proxy.upstream import UpstreamPool
 from steproute.core.catalog import Catalog
 from steproute.core.cost import AttemptUsage, price_usage
+from steproute.core.offpeak import FLAT, OFFPEAK, PeakHours, call_period, fmt_instant
+from steproute.core.offpeak import price_for_period as _price_for_period
 from steproute.core.policy import FixedPolicy, Policy
 from steproute.core.privacy import PrivacyConfig
-from steproute.core.schema import Action, Outcome
+from steproute.core.schema import Action, ModelProfile, Outcome
 from steproute.core.service import Service
 from steproute.core.store import TraceStore
 from steproute.replay.agent import ChatReply, RunStopped
@@ -238,9 +240,21 @@ class CallRecord:
     cache_write_tokens: int = 0
     output_tokens: int = 0
     latency_ms: float = 0.0
+    #: ``peak``, ``offpeak`` or ``flat``: the price ``usd`` was charged at.
+    period: str = FLAT
+    #: The same call at the catalog's peak (list) price.
+    list_usd: float = 0.0
 
 
 _TRANSIENT = {408, 409, 429, 500, 502, 503, 504, 520, 529}
+#: Seconds per sleep while a run waits for off-peak hours, so a stop is noticed.
+PAUSE_CHUNK_S = 60.0
+
+
+def is_balance_error(status: int, message: str) -> bool:
+    """The provider refuses for lack of funds (DeepSeek: HTTP 402 "Insufficient Balance")."""
+    text = message.lower()
+    return status == 402 or "insufficient balance" in text or "insufficient_balance" in text
 
 
 @dataclass
@@ -255,7 +269,10 @@ class ProxyChatClient:
     worst_call: float
     ledger: Ledger | None
     stop: threading.Event
-    started: float = field(default_factory=time.monotonic)
+    #: The run's timer (seconds, any origin): the run timeout and the length of a pause are
+    #: measured with it. Tests replace it, so neither depends on how fast the machine is.
+    monotonic: Callable[[], float] = time.monotonic
+    started: float = field(init=False, default=0.0)
     sleep: Callable[[float], None] = time.sleep
     outcome_timeout_s: float = 30.0
     calls: list[CallRecord] = field(default_factory=list)
@@ -265,8 +282,75 @@ class ProxyChatClient:
     #: record an infrastructure error as the model's failure.
     failed_decisions: list[str] = field(default_factory=list)
     spent: float = 0.0
+    #: The model's catalog profile: prices an off-peak call. ``None``: every call is charged
+    #: what the proxy priced (the catalog price).
+    profile: ModelProfile | None = None
+    #: The model's peak hours (``None``: flat price at every hour).
+    hours: PeakHours | None = None
+    #: Never send a call in peak hours: pause until off-peak instead (the backstop).
+    offpeak_only: bool = False
+    #: Pause when less off-peak than this is left before a call.
+    call_margin_s: float = 600.0
+    #: Wall clock (Unix seconds) for peak hours; the run timeout uses ``monotonic``.
+    clock: Callable[[], float] = time.time
+    #: This run's budget: it stops before a call once its spend reaches this. ``None`` or
+    #: ``limits.run_cap_usd``: the per-run cap (``run_cap``, a labelled failure). Lower: a
+    #: reduced budget from the provider's headroom (``budget_stop``, never a model failure).
+    budget_usd: float | None = None
+    notify: Callable[[str], None] | None = None
+    #: Seconds paused for off-peak hours; not counted against the run timeout.
+    paused_s: float = 0.0
+    list_spent: float = 0.0
     _last_prompt_tokens: int = 0
     _last_chars: int = 0
+
+    def __post_init__(self) -> None:
+        self.started = self.monotonic()
+
+    @property
+    def threshold(self) -> float:
+        cap = self.limits.run_cap_usd
+        return cap if self.budget_usd is None else min(cap, self.budget_usd)
+
+    def _over_budget(self, when: str = "") -> None:
+        if self.spent < self.threshold:
+            return
+        if self.threshold < self.limits.run_cap_usd:
+            raise RunStopped(
+                "budget_stop",
+                f"run spend ${self.spent:.4f} reached its reduced budget ${self.threshold:.4f} "
+                f"(the provider's remaining headroom){when}; the cell runs again when there is "
+                "budget",
+            )
+        raise RunStopped(
+            "run_cap",
+            f"run spend ${self.spent:.4f} reached the ${self.limits.run_cap_usd:g} cap{when}",
+        )
+
+    def _wait_offpeak(self) -> None:
+        """The backstop: with ``offpeak_only``, no call starts in peak hours or with less than
+        ``call_margin_s`` of off-peak left. The run pauses (holding its budget) until a long
+        enough off-peak stretch starts; the pause does not count against the run timeout."""
+        if not self.offpeak_only or self.hours is None or self.spec.local:
+            return
+        now = self.clock()
+        left = self.hours.offpeak_left(now)
+        if left > 0 and left >= self.call_margin_s:
+            return
+        resume = self.hours.next_window(now, max(self.call_margin_s, 1.0))[0]
+        if self.notify is not None:
+            self.notify(
+                f"run {self.run_id}: {self.spec.model} paused for {self.spec.provider} peak hours "
+                f"until {fmt_instant(resume)}"
+            )
+        t0 = self.monotonic()
+        try:
+            while (now := self.clock()) < resume:
+                if self.stop.is_set():
+                    raise RunStopped("interrupted", "the runner stopped while waiting for off-peak")
+                self.sleep(min(PAUSE_CHUNK_S, resume - now))
+        finally:
+            self.paused_s += self.monotonic() - t0
 
     # --- limits ---
 
@@ -284,12 +368,8 @@ class ProxyChatClient:
     def _check_limits(self, messages: Sequence[Mapping[str, Any]]) -> int:
         if self.stop.is_set():
             raise RunStopped("interrupted", "the runner is stopping")
-        if self.spent >= self.limits.run_cap_usd:
-            raise RunStopped(
-                "run_cap",
-                f"run spend ${self.spent:.4f} reached the ${self.limits.run_cap_usd:g} cap",
-            )
-        if time.monotonic() - self.started > self.limits.run_timeout_s:
+        self._over_budget()
+        if self.monotonic() - self.started - self.paused_s > self.limits.run_timeout_s:
             raise RunStopped("wall_time", f"the run passed {self.limits.run_timeout_s:g} s")
         chars, est = self._prompt_estimate(messages)
         if self.spec.local:
@@ -367,30 +447,41 @@ class ProxyChatClient:
         }
         attempt = 0
         while True:
+            self._wait_offpeak()
             intent = None
             if self.ledger is not None and not self.spec.local:
+                # Reserved at peak: worst_call is the catalog (peak) price.
                 intent = self.ledger.intend(self.spec.provider, self.worst_call, self.run_id)
             t0 = time.monotonic()
+            w0 = self.clock()
             try:
                 status, headers, obj = self._post(body)
             except (OSError, http.client.HTTPException) as exc:
                 # The local proxy itself did not answer: nothing reached the provider through
                 # it that we know of, but a call may have been in flight. Charge the worst case.
                 if intent is not None and self.ledger is not None:
-                    self.ledger.settle(intent, self.worst_call, ["proxy_unreachable"])
-                    self._charged(self.worst_call)
+                    period = call_period(self.hours, w0, self.clock())
+                    self.ledger.settle(
+                        intent,
+                        self.worst_call,
+                        ["proxy_unreachable"],
+                        period=period,
+                        list_usd=self.worst_call,
+                    )
+                    self._charged(self.worst_call, self.worst_call)
                 raise RunStopped(
                     "infra_error", f"the run's proxy failed: {type(exc).__name__}"
                 ) from None
             latency = (time.monotonic() - t0) * 1000
+            period = call_period(self.hours, w0, self.clock())
             if status == 200:
                 did = headers.get("x-steproute-decision-id")
                 outcome = self.proxy.capture.wait(did, self.outcome_timeout_s) if did else None
-                usd, flags, rec = self._cost(outcome)
+                usd, flags, rec = self._cost(outcome, period)
                 rec.latency_ms = latency
                 if intent is not None and self.ledger is not None:
-                    self.ledger.settle(intent, usd, flags)
-                self._charged(usd)
+                    self.ledger.settle(intent, usd, flags, period=period, list_usd=rec.list_usd)
+                self._charged(usd, rec.list_usd)
                 self.calls.append(rec)
                 self._verify(headers, outcome)
                 if rec.input_tokens + rec.cache_read_tokens + rec.cache_write_tokens > 0:
@@ -411,8 +502,22 @@ class ProxyChatClient:
             timeout = status in (408, 504)
             usd = self.worst_call if timeout else 0.0
             if intent is not None and self.ledger is not None:
-                self.ledger.settle(intent, usd, ["timeout"] if timeout else [f"http_{status}"])
-            self._charged(usd)
+                self.ledger.settle(
+                    intent,
+                    usd,
+                    ["timeout"] if timeout else [f"http_{status}"],
+                    period=period,
+                    list_usd=usd,
+                )
+            self._charged(usd, usd)
+            if is_balance_error(status, str((err or {}).get("message", ""))):
+                # Out of funds: every later call would get the same answer. Not the model's
+                # failure and not retried; the runner halts the provider and the cell stays
+                # pending.
+                raise RunStopped(
+                    "balance_stop",
+                    f"{self.spec.provider} answered HTTP {status}: insufficient balance",
+                )
             if kind == "steproute_sensitive":
                 raise RunStopped(
                     "blocked_sensitive",
@@ -423,24 +528,28 @@ class ProxyChatClient:
             if status in _TRANSIENT and attempt < self.limits.call_retries:
                 attempt += 1
                 self.sleep(self.limits.call_backoff_s * attempt)
-                if self.spent >= self.limits.run_cap_usd:
-                    raise RunStopped("run_cap", "run cap reached while retrying a call")
+                self._over_budget(" while retrying a call")
                 continue
             raise RunStopped(
                 "provider_error", f"provider answered HTTP {status} ({kind or 'error'})"
             )
 
-    def _charged(self, usd: float) -> None:
+    def _charged(self, usd: float, list_usd: float) -> None:
         self.spent += usd
+        self.list_spent += list_usd
 
-    def _cost(self, outcome: Outcome | None) -> tuple[float, list[str], CallRecord]:
+    def _cost(
+        self, outcome: Outcome | None, period: str = FLAT
+    ) -> tuple[float, list[str], CallRecord]:
+        """What the call is charged, at the price of its ``period``. The proxy prices every
+        outcome at the catalog (peak) price: that is ``list_usd``. An off-peak call is priced
+        again from its token counts with the off-peak prices. A missing usage is charged the
+        worst case at peak, in every period."""
         did = outcome.decision_id if outcome else None
         if outcome is None:
-            return (
-                self.worst_call,
-                ["outcome_missing"],
-                CallRecord(did, self.worst_call, ["outcome_missing"]),
-            )
+            rec = CallRecord(did, self.worst_call, ["outcome_missing"], period=period)
+            rec.list_usd = self.worst_call
+            return self.worst_call, ["outcome_missing"], rec
         tokens = outcome.input_tokens + outcome.cache_read_tokens + outcome.cache_write_tokens
         rec = CallRecord(
             did,
@@ -450,10 +559,21 @@ class ProxyChatClient:
             outcome.cache_read_tokens,
             outcome.cache_write_tokens,
             outcome.output_tokens,
+            period=period,
         )
         if outcome.cost_usd is None or tokens <= 0 or outcome.signals.get("usage_missing"):
             # Missing usage: never zero. Charge the worst case and flag it.
-            rec.usd, rec.flags = self.worst_call, ["missing_usage"]
+            rec.usd, rec.flags, rec.list_usd = self.worst_call, ["missing_usage"], self.worst_call
             return self.worst_call, ["missing_usage"], rec
-        rec.usd = float(outcome.cost_usd)
+        rec.list_usd = float(outcome.cost_usd)
+        rec.usd = rec.list_usd
+        if period == OFFPEAK and self.profile is not None:
+            usage = AttemptUsage(
+                input_tokens=outcome.input_tokens,
+                cache_read_tokens=outcome.cache_read_tokens,
+                cache_write_tokens=outcome.cache_write_tokens,
+                output_tokens=outcome.output_tokens,
+            )
+            off = _price_for_period(self.profile, OFFPEAK)
+            rec.usd = float(price_usage(off, usage).total_usd)
         return rec.usd, [], rec

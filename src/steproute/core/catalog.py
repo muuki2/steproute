@@ -17,6 +17,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from steproute.core.offpeak import PeakHoursError, offpeak_profile
 from steproute.core.schema import EFFORTS, ModelProfile, PriceTier
 
 __all__ = [
@@ -115,6 +116,12 @@ def _validate(p: ModelProfile) -> None:
         if t.price_in < 0 or t.price_out < 0:
             raise _fail(mid, loc, "prices must not be negative")
         previous = t.above_tokens
+    if "peak_hours" in p.meta:
+        # Time-of-day prices: the windows and the off-peak prices must both be usable.
+        try:
+            offpeak_profile(p)
+        except PeakHoursError as exc:
+            raise _fail(mid, "meta.peak_hours", str(exc)) from None
 
 
 def _profile_from_table(table: Any, index: int) -> ModelProfile:

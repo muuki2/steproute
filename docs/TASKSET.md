@@ -10,6 +10,12 @@ Decided by the maintainer on 13 Nov 2026:
 - **Grid: option B, the sparse grid.** Every local configuration and each paid model at its default effort on all 150 tasks, plus the other paid efforts on 30 tasks.
 - **No run is approved yet.** The pilot and every later batch need a separate go-ahead, and the option B estimate is to be redone from the pilot's measured costs before month 2.
 
+Decided by the maintainer on 13 Nov 2026, after Gate A (issue 57):
+
+- **DeepSeek has $10 in total**, funded once. It is not a monthly allowance. The runner enforces it as a total budget per ledger, next to a $10 monthly cap.
+- **Every DeepSeek call runs off-peak** (outside 01:00-04:00 and 06:00-10:00 UTC on weekdays), at half price. The runner starts a DeepSeek run only when off-peak lasts at least the 2-hour run timeout, and never sends a DeepSeek call in peak hours.
+- **No DeepSeek configuration is dropped from the pilot.** Its DeepSeek block (100 runs) is $17.57 central at peak, $8.79 off-peak: it fits in $10 at the central estimate, not at the high one ($44.43 off-peak), where the budget stops DeepSeek and the rest stays pending.
+
 The rest of this section is the material the decision was made from.
 
 ## The decision to make
@@ -20,14 +26,14 @@ The task set is **150 SWE-bench Verified tasks** with native arm64 evaluation im
 - **DeepSeek:** 2 models × 4 efforts = 8.
 - **Local:** 7 (6 in the pool plus the held-out `devstral:24b`). Local runs are free and run in every option.
 
-Spend is estimated at three points: **low / central / high**. Months are at the D3 caps: Anthropic $80 a month, and DeepSeek $20 a month, which is an assumption past the pilot.
+Spend is estimated at three points: **low / central / high**. Months are at the D3 caps: Anthropic $80 a month, and DeepSeek $20 a month, which was an assumption past the pilot when this table was made. Since 13 Nov 2026 DeepSeek has $10 in total and runs off-peak only (decision above), so the DeepSeek months columns no longer describe a plan: beyond the pilot, DeepSeek needs new funding.
 
 | Option | Tasks × configurations | Anthropic $ (runs) | Months at $80 | DeepSeek $ peak (off-peak ≈ half) | Months at $20 | Local compute |
 |---|---|---|---|---|---|---|
 | **A. Dense grid** | 150 × all 35 | 775 / **1,321** / 4,558 (3,000) | 10 / **17** / 57 | 189 / **356** / 1,641 | 10 / **18** / 83 (off-peak 5 / 9 / 42) | about 111 h |
 | **B. Sparse grid** | 150 × (every local configuration, plus each paid model at its default effort), plus the other paid efforts on 30 tasks | 266 / **456** / 1,600 (1,080) | 4 / **6** / 21 | 73 / **138** / 640 | 4 / **7** / 32 (off-peak 2 / 4 / 16) | about 111 h |
 | **C. Smaller dense** | 60 × all 35 | 310 / **529** / 1,823 (1,200) | 4 / **7** / 23 | 76 / **142** / 657 | 4 / **8** / 33 | about 44 h |
-| **Pilot (any option)** | 20 × the pilot configurations (below) | 23 / **41** / 179 (180) | 1 / **1** / 3 | 9 / **18** / 85 | 1 / **1** / 5 (off-peak $9 central) | about 15 h |
+| **Pilot (any option)** | 20 × the pilot configurations (below) | 23 / **41** / 179 (180) | 1 / **1** / 3 | 9 / **18** / 85 | off-peak 4.70 / **8.79** / 44.43 against the $10 total | about 15 h |
 
 `steproute tasks estimate` reproduces every number in this table (see "The cost model").
 
@@ -47,7 +53,7 @@ Spend is estimated at three points: **low / central / high**. Months are at the 
 
 **Recommendation.** Approve the subset and the pilot now. Choose **option B** for the full grid, with its spend re-estimated from the pilot before month 2.
 
-- The pilot costs about $41 of Anthropic credit (worst case: the $80 hard cap stops it) and about $9 of DeepSeek if it runs off-peak.
+- The pilot costs about $41 of Anthropic credit (worst case: the $80 hard cap stops it) and about $8.79 of DeepSeek, which runs off-peak only, out of its $10 total.
 - Option B buys the model-level dense matrix, which every downstream experiment needs, in about 6 months (4 to 21). Option A needs 17 months (10 to 57), and Option C costs more and gives worse splits.
 - The ranges are wide because nobody has published runs of *these* model versions on this scaffold. The pilot exists to replace the assumptions.
 - Two preconditions belong to issue 18, and the pilot should not start without them:
@@ -285,7 +291,7 @@ The estimates assume mini-SWE-agent. A scaffold that condenses history, or uses 
 |---|---|---|---|
 | Ollama | all 7: qwen3.5:9b none/medium; gpt-oss:20b low/medium/high; qwen3-coder:30b; devstral:24b (holdout, separate split) | 140 | 0; about 15 h |
 | Anthropic | Haiku all 5 efforts; Sonnet low and high; Opus medium (default); Fable low | 180 | **41** (23-179) |
-| DeepSeek | flash all 4 efforts; v4-pro high (default) | 100 | **18 peak, about 9 off-peak** (9-85) |
+| DeepSeek | flash all 4 efforts; v4-pro high (default) | 100 | **8.79 off-peak** (4.70-44.43); 17.57 at peak (9.39-84.57) |
 
 **Order**, per issue 18, cheapest first and lower effort first within a model:
 
@@ -298,14 +304,14 @@ The estimates assume mini-SWE-agent. A scaffold that condenses history, or uses 
 **Spend against the caps:**
 
 - **Anthropic.** The central estimate is $41 against $80, so about 1.9 times headroom.
-- **DeepSeek.** The central estimate is $18 at peak against $20, which is a thin margin. **Run DeepSeek off-peak**: that halves it to about $9, so about 2.2 times headroom.
+- **DeepSeek.** $10 in total, off-peak only (decision of 13 Nov 2026). The central estimate is $8.79 off-peak against $10, so about 1.14 times headroom; at peak it would be $17.57 and would not fit, which is why the runner never calls DeepSeek in peak hours. At 1.5 times the central estimate ($13.18) the budget stops DeepSeek after about 89 of the 100 runs (simulated against the mock in `tests/test_replay_offpeak.py`); unrun cells stay pending, not failed.
 - **The high scenario does not fit either cap.** The runner's hard per-provider cap is what bounds the spend. Cheapest-first order then leaves a usable partial pilot, with Fable and then Opus the ones cut short.
 
 **Stage gate** (for issue 18 to implement as a check, not a judgement call):
 
 1. Run Ollama, the Haiku efforts and Sonnet low on all 20 tasks first. That is about $11 central.
 2. Compute r = realized ÷ estimated cost for those configurations.
-3. If r × the remaining central estimate would take the month above $70, cut the remaining paid configurations to 10 tasks, keeping the stratum balance (3, 3, 3, 1).
+3. If r × the remaining central estimate would take the Anthropic month above $70, cut the remaining Anthropic configurations to 10 tasks, keeping the stratum balance (3, 3, 3, 1). DeepSeek is not cut by this gate: it has its own $10 budget, and no DeepSeek configuration or task is dropped (decision of 13 Nov 2026).
 
 **What the pilot measures, replacing assumptions:**
 
@@ -435,8 +441,8 @@ Money, or more time on the machine than issue 56 had:
 1. Approve **SWE-bench Verified (arm64 subset, 150 tasks)** as the task set? *yes / no*
 2. Full grid: option **A, B or C**? *A / B / C* (recommended: B)
 3. Approve the **pilot** (20 tasks; about $41 Anthropic central under the $80 hard cap; about $9 DeepSeek off-peak)? *yes / no*
-4. DeepSeek budget **per month after the pilot**? *a dollar amount* (the table assumes $20)
-5. Run DeepSeek **only off-peak**? *yes / no*
+4. DeepSeek budget **per month after the pilot**? *a dollar amount* (the table assumes $20). *Answered 13 Nov 2026 for the pilot: $10 in total; nothing after it is funded yet.*
+5. Run DeepSeek **only off-peak**? *yes / no*. *Answered: yes.*
 6. Keep the **15 unsolved tasks**, which are likely enriched with flawed tests? *keep / drop*
 7. Later, add about 30 fresh **SWE-rebench 2026 tasks** under x86_64 emulation as a contamination check? *yes / no*
 8. Assume **mini-SWE-agent** as the issue 18 scaffold? *yes / no*

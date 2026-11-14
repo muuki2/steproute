@@ -57,7 +57,7 @@ Fields are those of `ModelProfile` (see `docs/SCHEMA.md` for types and defaults)
 ## Field notes
 
 - **Prices and multipliers.** `cache_write_mult` and `cache_read_mult` are multiples of `price_in`, per model. The Anthropic entries use the 5-minute write (1.25); the 1-hour write is in `meta.cache_write_1h_mult`. DeepSeek has no write premium (1.0); its read multiplier is hit price over miss price. Ollama is free (0 prices, 1.0 multipliers).
-- **DeepSeek uses peak prices** in `price_in` / `price_out` (conservative for spend caps). Off-peak prices are in `meta.price_in_offpeak`, `meta.price_out_offpeak`, `meta.cache_hit_price_peak` and `meta.cache_hit_price_offpeak`.
+- **DeepSeek uses peak prices** in `price_in` / `price_out` (conservative for spend caps). Off-peak prices are in `meta.price_in_offpeak`, `meta.price_out_offpeak`, `meta.cache_hit_price_peak` and `meta.cache_hit_price_offpeak`. When the peak windows are applied is data too: `meta.peak_hours` (next section).
 - **`price_tiers`.** Base prices apply up to and including the first `above_tokens`. A request whose prompt is longer pays that tier's rate on the whole request. The prompt length counts all input tokens including cache reads and writes. Exactly 100,000 tokens is still the lower tier. Use `ModelProfile.prices_for(prompt_tokens)`.
 - **`tier`.** Cascade strength order across the whole pool: higher is stronger, ties allowed. Issue 5 uses it to decide whether an escalation is strictly stronger. **The default values are an editable assumption, not a measurement**: `qwen3.5:9b` 1; `gpt-oss:20b` 2; `qwen3-coder:30b` and `devstral:24b` 3; `claude-haiku-5-5` and `deepseek-flash` 4; `claude-sonnet-5-5` and `deepseek-v4-pro` 5; `claude-opus-5-5` 6; `claude-fable-5-2` 7.
 - **`efforts` and `effort_map`.** `efforts` are the shared levels the model supports. `effort_map` gives the value sent as `reasoning_effort` for each, in the form the endpoint the proxy calls accepts (for example `"max"` for DeepSeek). For Ollama that endpoint is the OpenAI-compatible `/v1`, not the native API, so the values are `reasoning_effort` names, not native `think` booleans. A supported effort missing from the map means "send no reasoning parameter". Anthropic omits `none` because thinking cannot be switched off uniformly across its models. DeepSeek omits `medium` and `xhigh` because it aliases them to `high`; listing them would duplicate a configuration. `qwen3.5:9b` can only turn thinking on or off: `none` sends `"none"` (Ollama sets `think = false`) and `medium` sends `"medium"` (Ollama turns thinking on). This is verified from Ollama's source and docs at v0.40.16, not by a run; `meta.effort_map_evidence` lists the files. The native `"true"`/`"false"` are not valid on `/v1`: a model with thinking metadata resolves an unknown name to its default (thinking on), and one without rejects it; `gpt-oss:20b` has `low, medium, high`; `qwen3-coder:30b` and `devstral:24b` have no reasoning control (`medium` only, empty map).
@@ -79,10 +79,40 @@ Fields are those of `ModelProfile` (see `docs/SCHEMA.md` for types and defaults)
 | `native_context` | The model's own context limit in tokens. |
 | `size_gb` | Download size on disk (Ollama). |
 | `price_in_offpeak`, `price_out_offpeak`, `cache_hit_price_peak`, `cache_hit_price_offpeak`, `offpeak_note` | DeepSeek time-of-day pricing (USD per million tokens). |
+| `peak_hours` | The hours when `price_in` / `price_out` apply; off-peak prices apply at every other hour. A table; see "Peak hours" below. |
 | `open_cache_questions` | Cache facts the provider docs leave undetermined. |
 | `reasoning_control` | How the model's reasoning is controlled (Ollama). |
 | `effort_map_evidence` | Where the `effort_map` values were checked (source read, not run). |
 | `source`, `checked` | Where the numbers came from and the date checked. |
+
+### Peak hours
+
+A model with a `[model.meta.peak_hours]` table is billed at its catalog prices inside the windows and at `meta.price_in_offpeak` / `meta.price_out_offpeak` at all other hours (the cache-hit ratio off-peak is `cache_hit_price_offpeak / price_in_offpeak`). A model without the table has one price at every hour (`flat`). `src/steproute/core/offpeak.py` reads the table and answers: is this instant peak or off-peak, when does the current off-peak stretch end, and when does the next one start. The catalog loader rejects a malformed table or missing off-peak prices.
+
+```toml
+[model.meta.peak_hours]
+timezone = "UTC"                       # the only value accepted
+windows = [
+  { days = ["mon", "tue", "wed", "thu", "fri"], start = "01:00", end = "04:00" },
+  { days = ["mon", "tue", "wed", "thu", "fri"], start = "06:00", end = "10:00" },
+]
+source = "https://api-docs.deepseek.com/quick_start/pricing"   # required
+checked = "2026-11-13"                                         # required
+note = "..."                                                   # optional
+```
+
+`start` is included and `end` is not; a window cannot cross midnight (write two). The default catalog gives both DeepSeek models these hours (checked 13 Nov 2026):
+
+| Days (UTC) | Peak | Off-peak |
+|---|---|---|
+| Monday to Friday | 01:00-04:00 and 06:00-10:00 | 00:00-01:00, 04:00-06:00, 10:00-24:00 |
+| Saturday, Sunday | none | all day |
+
+Off-peak is half the peak price for cache misses, cache hits and output alike. What is not covered:
+
+- **Chinese public holidays** are off-peak all day at DeepSeek. We do not keep that calendar and cannot verify it, so they count as ordinary weekdays: no discount is ever assumed on such a day.
+- **A call that crosses a boundary.** DeepSeek's page does not say how it is billed. steproute prices a call off-peak only if both its start and its end are off-peak; anything else is priced at peak.
+- None of this has been checked against a real DeepSeek bill.
 
 ## `verified`
 
