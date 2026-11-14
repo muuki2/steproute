@@ -1,0 +1,1342 @@
+{
+  "format": "steproute-eval-report",
+  "metrics_version": "1",
+  "steproute_version": "0.0.1",
+  "generated_at": 1794660996.8659358,
+  "command": [
+    "python",
+    "-m",
+    "steproute.baselines",
+    "routellm",
+    "..."
+  ],
+  "settings": {
+    "confidence": 0.95,
+    "bootstrap_replicates": 2000,
+    "seed": 0,
+    "min_ess": 50.0,
+    "min_clusters": 100,
+    "clip": null,
+    "headline_estimator": "dr",
+    "crossfit_folds": 5,
+    "support_tolerance": 0.001,
+    "cost_weight": null,
+    "min_margin": 0.0
+  },
+  "definitions": {
+    "unit": "A task on the grid; a logged step for off-policy estimates.",
+    "success_rate": "Mean success over units. Unlabelled outcomes are excluded from the headline and bounded in the 'unlabelled_sensitivity' diagnostic; they are never failures.",
+    "cost_per_task": "Mean realized cost in USD per task, failures included.",
+    "cost_per_step": "Mean realized cost in USD per logged step, failures included.",
+    "cost_per_solved": "Total spend divided by units solved (mean cost / success rate), so failed attempts are paid for. Null when nothing is solved; an unbounded interval is flagged.",
+    "quality_retention": "Success rate divided by that of the strongest single configuration (highest success, then cheapest) on the same units. Not capped: above 1 means the policy solves more than the strongest configuration.",
+    "strongest_solved_retained": "Grid only: of the tasks the strongest configuration solves, the share the policy also solves (at most 1).",
+    "switches_per_task": "Grid: expected model changes between cascade attempts within a task (0 for a single configuration).",
+    "config_changes_per_task": "Grid: expected (model, effort) changes between attempts.",
+    "switch_rate_per_step": "Logged: probability that the policy's first step uses a model other than the state's cache owner, averaged over logged states.",
+    "added_latency_p50_ms": "Grid: median over tasks of the latency of cascade attempts before the one that produced the result (routing-decision time is not in the data). Null on logged data.",
+    "added_latency_p95_ms": "As added_latency_p50_ms, the 95th percentile (lower quantile).",
+    "total_latency_p50_ms": "Grid: median end-to-end latency of the policy's runs per task.",
+    "total_latency_p95_ms": "Grid: 95th percentile end-to-end latency per task.",
+    "frontier_margin": "Success rate minus the frontier's success rate at the policy's spend, in success-rate units. The frontier is the upper concave envelope of every single configuration's (spend, success) point and the origin.",
+    "cost_saving_at_equal_success": "Grid: the frontier's least spend reaching the policy's success rate, minus the policy's spend (USD per task). Null and flagged when no configuration reaches it.",
+    "utility": "success_rate - cost_weight * cost, only when a cost weight is given.",
+    "verdict": "beats_frontier when the margin's interval lies above 0; does_not_beat when it lies at or below 0 (a tie does not beat); not_shown otherwise, or when the data cannot support a verdict (reasons listed).",
+    "interval": "Percentile cluster bootstrap at the stated confidence: whole tasks (or sessions without a task id) are resampled, paired across policies and configurations.",
+    "ess": "Kish effective sample size of the importance weights, (sum w)^2 / sum w^2."
+  },
+  "verdicts": [
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "routellm mf strong_share=0.1",
+      "hindsight": false,
+      "status": "does_not_beat",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.1 does not beat every single configuration: at $0.1991 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 67.4% (margin -16.4 points, 95% interval [-23.7, -9.7] points). cloud-small (low) alone costs $0.04565 per task and succeeds on 52.6%."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "routellm mf strong_share=0.25",
+      "hindsight": false,
+      "status": "does_not_beat",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.25 does not beat every single configuration: at $0.6553 per task it succeeds on 58.9% of tasks, where the best any single configuration or random mix of them reaches at that spend is 74.5% (margin -15.6 points, 95% interval [-22.3, -8.9] points). cloud-small (high) alone costs $0.1038 per task and succeeds on 64.2%."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "routellm mf strong_share=0.5",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether routellm mf strong_share=0.5 beats every single configuration; at $1.151 per task it succeeds on 73.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.7% (margin -4.5 points, 95% interval [-9.5, +1.2] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "routellm mf strong_share=0.75",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether routellm mf strong_share=0.75 beats every single configuration; at $1.462 per task it succeeds on 78.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.6% (margin -1.1 points, 95% interval [-4.7, +1.9] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "routellm mf strong_share=0.9",
+      "hindsight": false,
+      "status": "does_not_beat",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.9 does not beat every single configuration: at $2.203 per task it succeeds on 83.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 83.7% (margin +0.0 points, 95% interval [-2.1, +0.0] points). cloud-big (high) alone costs $2.203 per task and succeeds on 83.7%."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "rules",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "oracle",
+      "hindsight": true,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+    }
+  ],
+  "summary": [
+    "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.1 does not beat every single configuration: at $0.1991 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 67.4% (margin -16.4 points, 95% interval [-23.7, -9.7] points). cloud-small (low) alone costs $0.04565 per task and succeeds on 52.6%.",
+    "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.25 does not beat every single configuration: at $0.6553 per task it succeeds on 58.9% of tasks, where the best any single configuration or random mix of them reaches at that spend is 74.5% (margin -15.6 points, 95% interval [-22.3, -8.9] points). cloud-small (high) alone costs $0.1038 per task and succeeds on 64.2%.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether routellm mf strong_share=0.5 beats every single configuration; at $1.151 per task it succeeds on 73.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.7% (margin -4.5 points, 95% interval [-9.5, +1.2] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether routellm mf strong_share=0.75 beats every single configuration; at $1.462 per task it succeeds on 78.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.6% (margin -1.1 points, 95% interval [-4.7, +1.9] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.9 does not beat every single configuration: at $2.203 per task it succeeds on 83.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 83.7% (margin +0.0 points, 95% interval [-2.1, +0.0] points). cloud-big (high) alone costs $2.203 per task and succeeds on 83.7%.",
+    "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points).",
+    "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+  ],
+  "evaluations": [
+    {
+      "kind": "grid",
+      "level": "task",
+      "scope": "Task-level, full-information evaluation on the replay grid. Each policy's decision at task start is applied to the whole task, as one configuration or a cascade of configurations. No run in the grid switches model within a task, so step-level routing, the switch tax and within-task switching are NOT measured here; they can only be estimated from logged traces with propensities.",
+      "provenance": {
+        "source": "grid.jsonl",
+        "sha256": "cee46f5b14daf2b1c2e5d35575430bbe9e36257c85467903afe290d4607bc90c",
+        "header": {
+          "format": "steproute-grid",
+          "generator": "steproute.eval.synthetic",
+          "seed": 0
+        },
+        "skipped_lines": 0,
+        "runs": 6000,
+        "unlabelled_runs": 0,
+        "uncosted_runs": 0,
+        "runs_without_latency": 0,
+        "tasks_total": 1000,
+        "split": "test",
+        "tasks_in_split": 190,
+        "configurations": [
+          "cloud-big (high)",
+          "cloud-big (medium)",
+          "cloud-mid (medium)",
+          "cloud-small (high)",
+          "cloud-small (low)",
+          "local-small (medium)"
+        ],
+        "excluded_configurations": [],
+        "tasks_evaluated": 190,
+        "tasks_excluded": 0,
+        "tasks_excluded_by_reason": {
+          "missing_run": 0,
+          "unlabelled_run": 0,
+          "uncosted_run": 0
+        },
+        "incomplete_cells_by_configuration": {},
+        "baseline": {
+          "upstream": {
+            "name": "RouteLLM mf",
+            "repository": "https://github.com/lm-sys/RouteLLM",
+            "commit": "0b64fdafe049e596a3f5657c219329f24af24198",
+            "version": "routellm 0.2.0 (source at the commit; the package is not installed)",
+            "licence": "Apache-2.0",
+            "paper": "arXiv 2406.18665",
+            "use": "adapted"
+          },
+          "adapted_code": "steproute/baselines/_vendor/routellm_mf.py (Apache-2.0 notice kept)",
+          "trained_on": "battles from the train tasks; retrained from scratch, no pretrained checkpoint, no OpenAI embeddings",
+          "pair": {
+            "weak": "medium:local-small",
+            "strong": "high:cloud-big"
+          },
+          "battles": 2322,
+          "hyperparameters": {
+            "dim": 128,
+            "batch_size": 64,
+            "num_epochs": 100,
+            "alpha": 0.1,
+            "lr": 0.0003,
+            "weight_decay": 1e-05
+          },
+          "strong_shares": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "thresholds": [
+            0.9875962734222412,
+            0.9845108985900879,
+            0.9806488156318665,
+            0.9762409329414368,
+            0.9735476970672607
+          ],
+          "final_training_loss": 0.3580485289205671,
+          "tune_pairwise_accuracy": 0.8185840707964602,
+          "context": {
+            "source": "the tabular predictor's state block (steproute.ml.features), no text",
+            "columns": [
+              "task_hint",
+              "task_hint==0",
+              "task_hint==1",
+              "task_hint==2",
+              "task_hint==3",
+              "task_hint==4"
+            ],
+            "standardised_on": "train tasks",
+            "one_hot_max_levels": 8
+          },
+          "tasks_by_role": {
+            "probe": 50,
+            "train": 523,
+            "tune": 95,
+            "calibration": 142,
+            "test": 190
+          },
+          "split_seed": 0,
+          "excluded_configs": []
+        }
+      },
+      "frontier": {
+        "definition": "upper concave envelope of the single-configuration points and the origin (declining a unit); flat beyond the configuration with the highest success",
+        "configurations": [
+          {
+            "label": "cloud-big (high)",
+            "success_rate": {
+              "value": 0.8368421053,
+              "ci": [
+                0.7736842105,
+                0.8842105263
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 2.2029330063,
+              "ci": [
+                1.9478820606,
+                2.4685797882
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-big (medium)",
+            "success_rate": {
+              "value": 0.7894736842,
+              "ci": [
+                0.7263157895,
+                0.8421052632
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 1.3507221686,
+              "ci": [
+                1.1916586162,
+                1.5454577171
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-mid (medium)",
+            "success_rate": {
+              "value": 0.7263157895,
+              "ci": [
+                0.6631578947,
+                0.7894736842
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.3519021376,
+              "ci": [
+                0.3137536635,
+                0.3983516164
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-small (high)",
+            "success_rate": {
+              "value": 0.6421052632,
+              "ci": [
+                0.5736842105,
+                0.7105263158
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.1037549055,
+              "ci": [
+                0.0915056435,
+                0.1189585465
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-small (low)",
+            "success_rate": {
+              "value": 0.5263157895,
+              "ci": [
+                0.4578947368,
+                0.6
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.0456473875,
+              "ci": [
+                0.0401931597,
+                0.051826473
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "local-small (medium)",
+            "success_rate": {
+              "value": 0.4684210526,
+              "ci": [
+                0.4,
+                0.5421052632
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            }
+          }
+        ],
+        "envelope": [
+          {
+            "label": "local-small (medium)",
+            "cost": 0.0,
+            "success_rate": 0.4684210526
+          },
+          {
+            "label": "cloud-small (high)",
+            "cost": 0.1037549055,
+            "success_rate": 0.6421052632
+          },
+          {
+            "label": "cloud-mid (medium)",
+            "cost": 0.3519021376,
+            "success_rate": 0.7263157895
+          },
+          {
+            "label": "cloud-big (medium)",
+            "cost": 1.3507221686,
+            "success_rate": 0.7894736842
+          },
+          {
+            "label": "cloud-big (high)",
+            "cost": 2.2029330063,
+            "success_rate": 0.8368421053
+          }
+        ],
+        "excluded": {}
+      },
+      "policies": [
+        {
+          "name": "routellm mf strong_share=0.1",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.5105263158,
+              "ci": [
+                0.4368421053,
+                0.5842105263
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.1990641083,
+              "ci": [
+                0.1287566781,
+                0.3328489402
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.3899193873,
+              "ci": [
+                0.2564926348,
+                0.6752617059
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.6100628931,
+              "ci": [
+                0.5379746835,
+                0.6888041843
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.5974842767,
+              "ci": [
+                0.523734873,
+                0.6747462199
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1755.85255592,
+              "ci": [
+                1519.3210421708,
+                2179.5904197396
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8603.2473789966,
+              "ci": [
+                6718.8391110649,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.1639228025,
+              "ci": [
+                -0.2372280679,
+                -0.0973962164
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.1739114039,
+              "ci": [
+                -0.305060475,
+                -0.1095236512
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "does_not_beat",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.1 does not beat every single configuration: at $0.1991 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 67.4% (margin -16.4 points, 95% interval [-23.7, -9.7] points). cloud-small (low) alone costs $0.04565 per task and succeeds on 52.6%."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium)": 151.0,
+              "cloud-big (high)": 39.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "routellm mf strong_share=0.25",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.5894736842,
+              "ci": [
+                0.5210526316,
+                0.6631578947
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.6552547999,
+              "ci": [
+                0.4848229947,
+                0.8679320945
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.1115929641,
+              "ci": [
+                0.8306738276,
+                1.4987156906
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.7044025157,
+              "ci": [
+                0.6270370909,
+                0.7774251401
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.6918238994,
+              "ci": [
+                0.6177355762,
+                0.7629295423
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1755.85255592,
+              "ci": [
+                1519.3210421708,
+                2179.5904197396
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8603.2473789966,
+              "ci": [
+                6670.84836034,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.1560238546,
+              "ci": [
+                -0.2229798289,
+                -0.0894750969
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.5829407748,
+              "ci": [
+                -0.786511519,
+                -0.4360653008
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "does_not_beat",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.25 does not beat every single configuration: at $0.6553 per task it succeeds on 58.9% of tasks, where the best any single configuration or random mix of them reaches at that spend is 74.5% (margin -15.6 points, 95% interval [-22.3, -8.9] points). cloud-small (high) alone costs $0.1038 per task and succeeds on 64.2%."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium)": 123.0,
+              "cloud-big (high)": 67.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "routellm mf strong_share=0.5",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.7315789474,
+              "ci": [
+                0.6631578947,
+                0.7894736842
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.1514801455,
+              "ci": [
+                0.9557601122,
+                1.3695723657
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.5739656666,
+              "ci": [
+                1.2944816975,
+                1.9022871894
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.8742138365,
+              "ci": [
+                0.815420703,
+                0.9257711608
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.8616352201,
+              "ci": [
+                0.8025477707,
+                0.9097392913
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1736.6727311803,
+              "ci": [
+                1429.6855976879,
+                2079.0008931975
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8603.2473789966,
+              "ci": [
+                6670.84836034,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.0452961642,
+              "ci": [
+                -0.0954399945,
+                0.0119779992
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.7163430054,
+              "ci": [
+                -1.0326264593,
+                -0.0750655115
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether routellm mf strong_share=0.5 beats every single configuration; at $1.151 per task it succeeds on 73.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.7% (margin -4.5 points, 95% interval [-9.5, +1.2] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (high)": 111.0,
+              "local-small (medium)": 79.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "routellm mf strong_share=0.75",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.7842105263,
+              "ci": [
+                0.7210526316,
+                0.8368421053
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.46150379,
+              "ci": [
+                1.2716715502,
+                1.665671094
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.863662551,
+              "ci": [
+                1.6170020508,
+                2.170655765
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.9371069182,
+              "ci": [
+                0.8925899773,
+                0.9689440994
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9371069182,
+              "ci": [
+                0.8925899773,
+                0.9689440994
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1589.4576913175,
+              "ci": [
+                1278.4349166497,
+                1864.9335824
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8136.9251032396,
+              "ci": [
+                6332.1730672557,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.0114207309,
+              "ci": [
+                -0.0473684211,
+                0.0187681174
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.1940166239,
+              "ci": [
+                -0.7855103608,
+                0.2727838614
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether routellm mf strong_share=0.75 beats every single configuration; at $1.462 per task it succeeds on 78.4% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.6% (margin -1.1 points, 95% interval [-4.7, +1.9] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (high)": 159.0,
+              "local-small (medium)": 31.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "routellm mf strong_share=0.9",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8368421053,
+              "ci": [
+                0.7736842105,
+                0.8842105263
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 2.2029330063,
+              "ci": [
+                1.9478820606,
+                2.4685797882
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 2.632435668,
+              "ci": [
+                2.2468300953,
+                3.1159904926
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1570.5333813001,
+              "ci": [
+                1270.6947367769,
+                1834.755946104
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6170.9400425352,
+              "ci": [
+                5358.5689731987,
+                6734.8056956046
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0,
+              "ci": [
+                -0.0210526316,
+                0.0
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.0,
+              "ci": [
+                -1.0441430649,
+                0.0
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "does_not_beat",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. routellm mf strong_share=0.9 does not beat every single configuration: at $2.203 per task it succeeds on 83.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 83.7% (margin +0.0 points, 95% interval [-2.1, +0.0] points). cloud-big (high) alone costs $2.203 per task and succeeds on 83.7%."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (high)": 190.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "rules",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8631578947,
+              "ci": [
+                0.8105263158,
+                0.9052631579
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.0567730353,
+              "ci": [
+                0.8411097255,
+                1.2990402649
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.2243102238,
+              "ci": [
+                0.9419944332,
+                1.57534685
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0314465409,
+              "ci": [
+                0.96875,
+                1.1060152805
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9182389937,
+              "ci": [
+                0.8652605804,
+                0.950617284
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.2736842105,
+              "ci": [
+                0.2105263158,
+                0.3368421053
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.2736842105,
+              "ci": [
+                0.2105263158,
+                0.3368421053
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 2381.3260923551,
+              "ci": [
+                2106.9614994901,
+                2738.1571887149
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 637.7099018096,
+              "ci": [
+                524.0344307614,
+                851.990424028
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 5909.5547658766,
+              "ci": [
+                5211.8678483025,
+                6547.5834569827
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0922713512,
+              "ci": [
+                0.0700326819,
+                0.1371162231
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                0.7481050592,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-mid (medium) -> cloud-big (medium)": 190.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "oracle",
+          "hindsight": true,
+          "metrics": {
+            "success_rate": {
+              "value": 0.9421052632,
+              "ci": [
+                0.9,
+                0.9684210526
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.4873867816,
+              "ci": [
+                0.3162977254,
+                0.7185966929
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.5173379246,
+              "ci": [
+                0.3347825888,
+                0.7580235275
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.1257861635,
+              "ci": [
+                1.0784857028,
+                1.1986754967
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 929.182733829,
+              "ci": [
+                770.7111758639,
+                1091.740054323
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6728.2008720882,
+              "ci": [
+                5102.6493295289,
+                8818.8700339487
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.20722244,
+              "ci": [
+                0.1637669798,
+                0.2566247483
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                null,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium)": 100.0,
+              "cloud-small (low)": 31.0,
+              "cloud-small (high)": 22.0,
+              "cloud-mid (medium)": 15.0,
+              "cloud-big (medium)": 13.0,
+              "cloud-big (high)": 9.0
+            },
+            "latency_tasks": 190
+          }
+        }
+      ],
+      "ranking": [
+        {
+          "name": "rules",
+          "frontier_margin": 0.0922713512,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 1,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "routellm mf strong_share=0.9",
+          "frontier_margin": 0.0,
+          "utility": null,
+          "verdict": "does_not_beat",
+          "rank": 2,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "routellm mf strong_share=0.75",
+          "frontier_margin": -0.0114207309,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 3,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "routellm mf strong_share=0.5",
+          "frontier_margin": -0.0452961642,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 4,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "routellm mf strong_share=0.25",
+          "frontier_margin": -0.1560238546,
+          "utility": null,
+          "verdict": "does_not_beat",
+          "rank": 5,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "routellm mf strong_share=0.1",
+          "frontier_margin": -0.1639228025,
+          "utility": null,
+          "verdict": "does_not_beat",
+          "rank": 6,
+          "ranked_by": "frontier_margin"
+        }
+      ],
+      "notes": [
+        "Cascades are simulated from independent single-configuration runs: a cascade succeeds if any step's run succeeded and pays for a step only when every earlier step failed. Each step's cost is that of a fresh run, so cache reuse between steps (and any benefit of seeing the earlier failure) is not in the data.",
+        "Added latency is the time spent in cascade attempts before the one that produced the final result; routing-decision time is not in the grid and is not included."
+      ],
+      "stamp": "SYNTHETIC DATA. NOT A RESULT."
+    }
+  ],
+  "stamp": "SYNTHETIC DATA. NOT A RESULT.",
+  "synthetic_data": true,
+  "notice": "SYNTHETIC DATA. NOT A RESULT. This report was made from the evaluator's synthetic generator. It says nothing about real models."
+}

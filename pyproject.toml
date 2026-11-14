@@ -26,6 +26,10 @@ mcp = ["mcp>=2.3,<3"]  # the server uses the 2.x MCPServer API
 ml = ["lightgbm>=4.0", "scikit-learn>=1.3"]
 dataset = ["pyarrow>=15"]  # Parquet for the dataset release (steproute.dataset); imported lazily
 graph = ["torch>=2.2", "torch-geometric>=2.5"]
+# External baselines (issue 22, docs/BASELINES.md). Heavy and optional: never installed by
+# scripts/ci.sh. paretobandit is pinned to the release whose source matches the commit in
+# docs/BASELINES.md; torch and torch-geometric run the GraphRouter and RouteLLM adaptations.
+baselines = ["paretobandit==0.1.1", "torch>=2.2", "torch-geometric>=2.5"]
 dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "hypothesis>=6", "jsonschema>=4"]
 
 [project.scripts]
@@ -53,9 +57,20 @@ files = [
     "src/steproute/ml",
     "src/steproute/replay",
     "src/steproute/dataset",
+    "src/steproute/baselines",
 ]
 strict = true
 
 [[tool.mypy.overrides]]
 module = ["pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
+
+# The baselines extra is not installed by scripts/ci.sh; its libraries are imported lazily.
+[[tool.mypy.overrides]]
+module = ["pareto_bandit", "pareto_bandit.*", "torch", "torch.*", "torch_geometric", "torch_geometric.*"]
+ignore_missing_imports = true
+
+# Without the extra, torch.nn.Module is Any; the adapted upstream modules subclass it.
+[[tool.mypy.overrides]]
+module = ["steproute.baselines._vendor.*"]
+disallow_subclassing_any = false
