@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from steproute.eval.data import COST_BASIS
 from steproute.eval.frontier import Point, cost_at, envelope, success_at
 from steproute.eval.stats import Interval, bca_interval, percentile_interval
 
@@ -225,6 +226,7 @@ class Evaluation:
             "kind": self.kind,
             "level": self.level,
             "scope": self.scope,
+            "cost_basis": COST_BASIS,
             "provenance": self.provenance,
             "frontier": {
                 "definition": (
@@ -295,8 +297,9 @@ def decide_verdict(
     at = success_at(env, cost)
     span = f"[{margin_ci.lo * 100:+.1f}, {margin_ci.hi * 100:+.1f}] points"
     where = (
-        f"at {_usd(cost)} per {unit} it succeeds on {_pct(success)} of {unit}s, where the best "
-        f"any single configuration or random mix of them reaches at that spend is {_pct(at)} "
+        f"at {_usd(cost)} per {unit} (list price) it succeeds on {_pct(success)} of {unit}s, "
+        f"where the best any single configuration or random mix of them reaches at that "
+        f"spend is {_pct(at)} "
         f"(margin {margin_value * 100:+.1f} points, {level} interval {span})"
     )
     if margin_ci.lo > bar:

@@ -14,7 +14,7 @@ from typing import Any
 
 from steproute.core.catalog import Catalog, CatalogError, load_catalog, load_default_catalog
 from steproute.core.rules import RuleConfigError
-from steproute.eval.data import DataFormatError, detect_kind, load_grid, load_logged
+from steproute.eval.data import COST_BASIS, DataFormatError, detect_kind, load_grid, load_logged
 from steproute.eval.grid import evaluate_grid
 from steproute.eval.ope import evaluate_logged
 from steproute.eval.plot import write_svg
@@ -115,8 +115,23 @@ def run(args: argparse.Namespace) -> int:
         target = args.plot or args.out.with_suffix(".svg")
         for p in write_svg(target, evaluations):
             print(f"plot: {p}")
+    print(f"\ncost basis: {COST_BASIS}")
     for ev in evaluations:
         print(f"\n{ev.provenance.get('source')} ({ev.kind} data, {ev.level} level)")
+        errs = ev.provenance.get("cost_basis", {})
+        n_err = errs.get("errors", {}) if isinstance(errs, dict) else {}
+        n_bad = (
+            n_err.get("runs_without_usable_cost")
+            or n_err.get("steps_with_outcome_and_no_usable_cost")
+            if isinstance(n_err, dict)
+            else 0
+        )
+        if n_bad:
+            print(
+                f"  ERROR: {n_bad} runs or steps have no usable cost and are left out "
+                "(see provenance.cost_basis.errors in the report)",
+                file=sys.stderr,
+            )
         for pol in ev.policies:
             print(f"  {pol.verdict.sentence}")
     return 0

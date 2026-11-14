@@ -42,6 +42,7 @@ __all__ = [
     "GridTask",
     "LoggedData",
     "LoggedRow",
+    "COST_BASIS",
     "config_key",
     "detect_kind",
     "load_grid",
@@ -56,6 +57,15 @@ GRID_FORMAT = "steproute-grid"
 GRID_VERSION = "0.1"
 
 ConfigKey = tuple[str, str]
+
+#: The cost basis of every comparison, ranking, frontier and verdict, in one sentence. Written
+#: into every report and printed by the CLI.
+COST_BASIS = (
+    "Every cost used to compare, rank or judge is list price: the catalog's peak price "
+    "applied to the token counts, the same whatever hour the run happened in and however the "
+    "session was paid for; the billed cost is reported next to it where the two differ and is "
+    "never used for a verdict."
+)
 
 
 class DataFormatError(ValueError):
@@ -86,6 +96,14 @@ def _opt_number(value: Any, where: str) -> float | None:
     return v
 
 
+def _usable_cost(value: Any) -> float | None:
+    """``value`` as a cost in USD, or ``None`` if it is missing, not a finite number or negative."""
+    if value is None or isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    v = float(value)
+    return v if math.isfinite(v) and v >= 0 else None
+
+
 def _opt_str(value: Any, where: str) -> str | None:
     if value is None:
         return None
@@ -103,7 +121,9 @@ class GridRun:
 
     ``success`` is the task check's result; ``None`` means the run has no usable label
     (harness error, timeout before the check): it is not a failure. ``cost_usd`` is the
-    realized cost of the whole run; ``None`` means unknown. ``latency_ms`` is the run's
+    **billed** cost of the whole run (an off-peak DeepSeek run is billed at half its list
+    price); ``None`` means unknown. The evaluator compares on ``list_cost_usd`` instead: the
+    same usage at the catalog's peak price, ``meta["list_cost_usd"]``. ``latency_ms`` is the run's
     wall-clock time. ``session_id`` links the run to its per-step traces in the trace store
     (``StepState.session_id``); ``run_id`` is unique per run. ``repeat`` numbers repeated runs
     of the same cell from 0.
@@ -124,6 +144,35 @@ class GridRun:
     @property
     def config(self) -> ConfigKey:
         return (self.model, self.effort)
+
+    @property
+    def billed_cost_usd(self) -> float | None:
+        """What the run was billed, or ``None`` if unknown."""
+        return _usable_cost(self.cost_usd)
+
+    @property
+    def list_cost(self) -> tuple[float | None, str]:
+        """The run's list-price cost and where it came from.
+
+        ``stored_list``: the row's ``meta.list_cost_usd``. ``billed_as_list``: no list cost is
+        stored, but the row records no off-peak call, so its billed cost is its list cost (rows
+        from before off-peak billing, and hand-written grids). ``missing``: neither, or the
+        row has off-peak calls and no list cost, so the list price cannot be recovered. The
+        grid carries no token counts, so it cannot be priced from tokens here.
+        """
+        stored = _usable_cost(self.meta.get("list_cost_usd"))
+        if stored is not None:
+            return stored, "stored_list"
+        billed = self.billed_cost_usd
+        periods = self.meta.get("calls_by_period")
+        offpeak = periods.get("offpeak", 0) if isinstance(periods, dict) else 0
+        if billed is not None and not (isinstance(offpeak, int | float) and offpeak > 0):
+            return billed, "billed_as_list"
+        return None, "missing"
+
+    @property
+    def list_cost_usd(self) -> float | None:
+        return self.list_cost[0]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -255,8 +304,10 @@ class Cell:
     """All runs of one task under one configuration, summarised.
 
     ``success`` is the mean of the labelled runs (1.0 or 0.0 for a single run), ``cost`` and
-    ``latency`` the means of the runs that report them. ``complete`` means every run is
-    labelled and costed, which is what the headline evaluation requires.
+    ``latency`` the means of the runs that report them. ``cost`` is the list-price cost (the
+    basis of every comparison); ``billed_cost`` is the mean billed cost over the runs that
+    report one, ``None`` when none does. ``complete`` means every run is labelled and costed
+    (with a list cost), which is what the headline evaluation requires.
     """
 
     runs: int
@@ -265,6 +316,8 @@ class Cell:
     success: float | None
     cost: float | None
     latency: float | None
+    billed_cost: float | None = None
+    billed_costed: int = 0
 
     @property
     def complete(self) -> bool:
@@ -293,7 +346,8 @@ class GridData:
         out: dict[tuple[str, ConfigKey], Cell] = {}
         for key, runs in groups.items():
             lab = [float(r.success) for r in runs if r.success is not None]
-            cst = [r.cost_usd for r in runs if r.cost_usd is not None]
+            cst = [c for c in (r.list_cost_usd for r in runs) if c is not None]
+            bld = [c for c in (r.billed_cost_usd for r in runs) if c is not None]
             lat = [r.latency_ms for r in runs if r.latency_ms is not None]
             out[key] = Cell(
                 runs=len(runs),
@@ -302,6 +356,8 @@ class GridData:
                 success=sum(lab) / len(lab) if lab else None,
                 cost=sum(cst) / len(cst) if cst else None,
                 latency=sum(lat) / len(lat) if lat else None,
+                billed_cost=sum(bld) / len(bld) if bld else None,
+                billed_costed=len(bld),
             )
         return out
 
@@ -422,8 +478,9 @@ class LoggedRow:
     ``cluster`` is the resampling unit: the task id when the state has one (sessions of one
     task are not independent), else the session id. ``candidates`` is the logging policy's
     candidate set when it is known (explicit, or rebuilt and verified against a catalog),
-    else ``None``. ``cost_source`` is ``reported``, ``tokens`` (priced from the outcome's
-    token counts with the catalog) or ``missing``.
+    else ``None``. ``cost`` is the list-price cost; ``cost_source`` is ``tokens`` (priced from
+    the outcome's token counts with the catalog), ``reported`` (no usable tokens, so the stored
+    cost is taken as a list cost) or ``missing``. ``billed_cost`` is the stored cost, if any.
     """
 
     decision: Decision
@@ -433,6 +490,7 @@ class LoggedRow:
     cost: float | None
     cost_source: str
     candidates: tuple[Action, ...] | None
+    billed_cost: float | None = None
 
     @property
     def state(self) -> StepState:
@@ -488,24 +546,35 @@ def _read_trace_file(path: Path) -> tuple[list[Decision], dict[str, Outcome], in
 
 def _cost(
     decision: Decision, outcome: Outcome | None, catalog: Catalog | None
-) -> tuple[float | None, str]:
+) -> tuple[float | None, str, float | None]:
+    """``(list cost, source, billed cost)`` of one logged step.
+
+    Token counts come first: with them the list cost is the catalog's price for those tokens
+    (``tokens``), whatever the stored cost says and however the session was paid for. Without
+    usable tokens a stored cost is taken as a list cost (``reported``; the proxy prices at
+    catalog rates), except on a subscription, where the stored 0 is no price (``missing``).
+    The billed cost is the stored one, if any.
+    """
     if outcome is None:
-        return None, "missing"
-    if outcome.cost_usd is not None:
-        if math.isfinite(outcome.cost_usd) and outcome.cost_usd >= 0:
-            return float(outcome.cost_usd), "reported"
-        return None, "missing"
-    if catalog is None or outcome.escalated or decision.action.escalate_to is not None:
-        return None, "missing"
-    model = outcome.final_model or decision.action.model
-    if model not in catalog:
-        return None, "missing"
-    if outcome.input_tokens + outcome.output_tokens + outcome.cache_read_tokens == 0:
-        return None, "missing"
-    try:
-        return realized_cost(outcome, catalog.get(model)), "tokens"
-    except CostModelError:
-        return None, "missing"
+        return None, "missing", None
+    billed = _usable_cost(outcome.cost_usd)
+    subscription = outcome.signals.get("billing") == "subscription"
+    if (
+        catalog is not None
+        and not outcome.escalated
+        and decision.action.escalate_to is None
+        and outcome.signals.get("usage_missing") is not True
+        and (outcome.final_model or decision.action.model) in catalog
+        and outcome.input_tokens + outcome.output_tokens + outcome.cache_read_tokens > 0
+    ):
+        model = outcome.final_model or decision.action.model
+        try:
+            return realized_cost(outcome, catalog.get(model)), "tokens", billed
+        except CostModelError:
+            pass
+    if billed is not None and not subscription:
+        return billed, "reported", billed
+    return None, "missing", billed
 
 
 def load_logged(path: str | os.PathLike[str], catalog: Catalog | None = None) -> LoggedData:
@@ -573,7 +642,7 @@ def _rows(
             except CandidateSetMismatch:
                 cands = None
                 issues["fingerprint_mismatch"] = issues.get("fingerprint_mismatch", 0) + 1
-        cost, how = _cost(d, o, catalog)
+        cost, how, billed = _cost(d, o, catalog)
         cluster = f"task:{d.state.task_id}" if d.state.task_id else f"session:{d.state.session_id}"
         rows.append(
             LoggedRow(
@@ -584,6 +653,7 @@ def _rows(
                 cost=cost,
                 cost_source=how,
                 candidates=cands,
+                billed_cost=billed,
             )
         )
     return tuple(rows), issues
