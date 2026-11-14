@@ -2332,6 +2332,22 @@ wheels = [
 ]
 
 [[package]]
+name = "paretobandit"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "joblib" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "scikit-learn" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e5/06/3c31deb7ca67a989b10a57fea1e86a57d43416b68baa0ce16e0d50093a65/paretobandit-0.1.1.tar.gz", hash = "sha256:e39119b15d820d81d9dbdfc716a3c128f4b7ca560af1ad5e216d4bef0bcc1d0f", size = 660688, upload-time = "2026-03-29T21:33:23.656Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/d5/7e10c6473ec43169efbb9c3a3484d30e7c071c8a45c7e88a564a2d991f90/paretobandit-0.1.1-py3-none-any.whl", hash = "sha256:b30b2a154fe24b619e60b0cbac7bbae1aed387daf45aceecc3dbe5af8b711853", size = 681385, upload-time = "2026-03-29T21:33:21.846Z" },
+]
+
+[[package]]
 name = "pathspec"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3434,6 +3450,11 @@ version = "0.0.1"
 source = { editable = "." }
 
 [package.optional-dependencies]
+baselines = [
+    { name = "paretobandit" },
+    { name = "torch" },
+    { name = "torch-geometric" },
+]
 dev = [
     { name = "hypothesis" },
     { name = "jsonschema" },
@@ -3464,13 +3485,16 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'proxy'", specifier = "==1.109.1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "paretobandit", marker = "extra == 'baselines'", specifier = "==0.1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.3" },
+    { name = "torch", marker = "extra == 'baselines'", specifier = ">=2.2" },
     { name = "torch", marker = "extra == 'graph'", specifier = ">=2.2" },
+    { name = "torch-geometric", marker = "extra == 'baselines'", specifier = ">=2.5" },
     { name = "torch-geometric", marker = "extra == 'graph'", specifier = ">=2.5" },
 ]
-provides-extras = ["proxy", "mcp", "ml", "graph", "dev"]
+provides-extras = ["proxy", "mcp", "ml", "graph", "baselines", "dev"]
 
 [[package]]
 name = "sympy"
