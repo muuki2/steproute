@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_tasks(sub)
     _add_eval(sub)
     _add_ml(sub)
+    _add_dataset(sub)
     add_replay(sub)
     return parser
 
@@ -77,6 +78,19 @@ def _ml(args: argparse.Namespace) -> int:
     from steproute.ml.cli import run
 
     return run(args)
+
+
+def _add_dataset(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``dataset`` command group: build and check a release (needs ``[dataset]``)."""
+    p = sub.add_parser(
+        "dataset",
+        help="Build and check a dataset release (needs steproute[dataset]).",
+        description="Scrubbed replay traces as Parquet with fixed splits by task, a datasheet "
+        "and checksums. Writes a local directory only. See docs/DATASET.md.",
+    )
+    from steproute.dataset.cli import add_arguments
+
+    add_arguments(p)
 
 
 def _add_traces(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

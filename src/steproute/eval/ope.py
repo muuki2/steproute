@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from steproute.core.schema import Action, StepState
-from steproute.eval.data import LoggedData, LoggedRow
+from steproute.eval.data import COST_BASIS, LoggedData, LoggedRow
 from steproute.eval.frontier import Point, envelope, success_at
 from steproute.eval.results import (
     BEATS,
@@ -708,6 +708,38 @@ def evaluate_logged(
     cost_sources: dict[str, int] = {}
     for r in data.rows:
         cost_sources[r.cost_source] = cost_sources.get(r.cost_source, 0) + 1
+    both = [r for r in data.rows if r.cost is not None and r.billed_cost is not None]
+    list_total = math.fsum(r.cost for r in both if r.cost is not None)
+    billed_total = math.fsum(r.billed_cost for r in both if r.billed_cost is not None)
+    differing = sum(
+        1
+        for r in both
+        if r.cost is not None
+        and r.billed_cost is not None
+        and abs(r.cost - r.billed_cost) > 1e-9 * max(1.0, abs(r.cost))
+    )
+    no_cost = [r for r in data.rows if r.outcome is not None and r.cost is None]
+    cost_basis: dict[str, object] = {
+        "statement": COST_BASIS,
+        "list_cost_source": cost_sources,
+        "steps_with_both_costs": len(both),
+        "steps_where_billed_differs_from_list": differing,
+        "list_total_usd_over_those_steps": num(list_total),
+        "billed_total_usd_over_those_steps": num(billed_total),
+        "billed_note": (
+            "The billed cost is the cost stored in the outcome. On a subscription it is 0 "
+            "(no per-request charge). It is not estimated for a policy, only reported for the "
+            "logged steps."
+        ),
+        "errors": {
+            "steps_with_outcome_and_no_usable_cost": len(no_cost),
+            "meaning": (
+                "No token counts the catalog can price and no stored list cost (or a "
+                "subscription step without tokens). Such a step is left out of every cost "
+                "estimate, never counted as free."
+            ),
+        },
+    }
     logged_sw = [
         1.0
         if x.row.state.current_model is not None and x.row.action.model != x.row.state.current_model
@@ -715,6 +747,7 @@ def evaluate_logged(
         for x in rows
     ]
     provenance: dict[str, object] = {
+        "cost_basis": cost_basis,
         "source": data.source,
         "files": list(data.files),
         "sha256": data.sha256,
@@ -753,6 +786,11 @@ def evaluate_logged(
         "Intervals resample whole clusters (tasks, or sessions without a task id); the reward "
         "model is not refitted inside the bootstrap.",
     ]
+    if no_cost:
+        notes.append(
+            f"{len(no_cost)} steps have an outcome but no usable cost (see "
+            "provenance.cost_basis.errors); they are left out of the cost estimates."
+        )
     if unlabelled:
         notes.append(
             f"{unlabelled} steps are unlabelled. Success estimates use labelled steps only "

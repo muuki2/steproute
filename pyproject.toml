@@ -24,6 +24,7 @@ classifiers = [
 proxy = ["litellm==1.109.1"]
 mcp = ["mcp>=2.3,<3"]  # the server uses the 2.x MCPServer API
 ml = ["lightgbm>=4.0", "scikit-learn>=1.3"]
+dataset = ["pyarrow>=15"]  # Parquet for the dataset release (steproute.dataset); imported lazily
 graph = ["torch>=2.2", "torch-geometric>=2.5"]
 # External baselines (issue 22, docs/BASELINES.md). Heavy and optional: never installed by
 # scripts/ci.sh. paretobandit is pinned to the release whose source matches the commit in
@@ -55,9 +56,14 @@ files = [
     "src/steproute/eval",
     "src/steproute/ml",
     "src/steproute/replay",
+    "src/steproute/dataset",
     "src/steproute/baselines",
 ]
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
 
 # The baselines extra is not installed by scripts/ci.sh; its libraries are imported lazily.
 [[tool.mypy.overrides]]
