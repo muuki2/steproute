@@ -18,3 +18,5 @@ node_modules/
 # API keys for the replay runner live in environment files; they must never be committed
 .env
 .env.*
+# replay output directories (docs/REPLAY.md): ledger, trajectories and traces, never committed
+runs/

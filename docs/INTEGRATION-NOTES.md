@@ -1028,6 +1028,8 @@ Each finding was also exercised against the loopback mock (`src/steproute/collec
 
 *Tested on 13 Nov 2026 (issue 56, section 14):* the harness 5.0.2 runs on this Mac against the arm64 image named in a one-row dataset, as described above; the per-instance report is under `logs/run_evaluation/` (5.0.x layout); the empty patch is indeed skipped without a container. For the 20 pilot tasks, 19 images grade correctly with the August 2026 `eval_script` (gold passes, a no-change patch fails), including all 5 Epoch images; `psf__requests-1921` fails even with the gold patch.
 
+*Note, 14 Nov 2026 (issue 58): resolved. Five `psf/requests` tasks, `psf__requests-1921` among them, were marked broken and replaced; the pilot has 20 gradable tasks. See `docs/TASKSET.md` section 8.3. The text above is the record as written on 13 Nov 2026.*
+
 ## 11. Issue 18: mini-SWE-agent as the replay scaffold, and two proxy findings
 
 *Added by issue 18, checked 2026-11-13.* mini-SWE-agent was read from the PyPI wheel `mini_swe_agent-2.4.6-py3-none-any.whl` (uploaded 2026-07-23; sha256 `a35463c553ac825c7773b03cfa69cd44958e3af20155dcc5711fdf9e4c67cd54`), unpacked into a scratch directory and never installed or run. Line references are to files in that wheel. The two proxy findings were reproduced against the loopback mock with the pinned `litellm==1.109.1`. No provider was called.
@@ -1272,6 +1274,7 @@ The plugin is loaded through dsh's own loading path: a `- insert:` row in the `-
 
 - **The harness works on Apple Silicon**, with native arm64 images, one instance at a time, through `SwebenchBackend` exactly as section 10 describes (a one-row dataset whose `image` is the arm64 one). Installed by `scripts/install_swebench.sh`: Python 3.12 venv at `.cache/steproute/swebench-env`, `swebench==5.0.2` and 79 dependencies at the exact versions in `scripts/swebench-requirements.txt` (`uv pip compile` for `aarch64-apple-darwin`). `steproute tasks check` and the replay config now find it, and the fetched rows, from the project root.
 - **19 of the 20 pilot images grade correctly; `psf__requests-1921` does not** (the gold patch fails). The table is in `docs/TASKSET.md` section 8.1. All 5 Epoch images ("not tested" by their authors) grade correctly.
+  *Note, 14 Nov 2026 (issue 58): resolved. Five `psf/requests` tasks, `psf__requests-1921` among them, were marked broken and replaced; the pilot has 20 gradable tasks. See `docs/TASKSET.md` section 8.3. The text above is the record as written on 13 Nov 2026.*
 - **An empty patch proves nothing about an image**: the harness skips it without starting a container. Validation needs a patch that changes no code but is not empty; `--patch baseline` adds one inert file.
 - **GHCR pulls fail through Docker Desktop on this Mac** with `403 Forbidden` on `https://ghcr.io/token?scope=repository:epoch-research/...:pull`, also with an empty `DOCKER_CONFIG`; an anonymous token request with `curl` returns 200 and the manifests are readable. Docker Desktop routes pulls through its own proxy (`docker info`: `HTTP Proxy: http.docker.internal:3128`) and presents the `ghcr.io` login it has stored, which these public repositories refuse. `scripts/fetch_ghcr_image.py` fetches anonymously and `docker load`s; the stored login was left alone.
 - **`DockerWorkspace` behaves as documented**, checked inside the container: a fixed environment and no network.
@@ -1332,6 +1335,7 @@ A final `steproute catalog check` (the catalog's default selection: all four loc
 **Found, not changed.**
 
 - `psf__requests-1921` cannot be passed on its arm64 image; whether to drop it is the maintainer's call (`docs/TASKSET.md` section 8.1).
+  *Note, 14 Nov 2026 (issue 58): resolved. Five `psf/requests` tasks, `psf__requests-1921` among them, were marked broken and replaced; the pilot has 20 gradable tasks. See `docs/TASKSET.md` section 8.3. The text above is the record as written on 13 Nov 2026.*
 - The pre-flight's free-disk line measures the host disk at the output directory; images live in the Docker Desktop VM's disk, which the pre-flight does not see.
 - The SWE-bench images run `pip install -e .` in `eval.sh`; with `--network none` the agent cannot install anything in its container, by design.
 
