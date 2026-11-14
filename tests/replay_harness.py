@@ -186,6 +186,8 @@ def runner(
 ) -> Runner:
     import io
 
+    # Every output directory of a test shares one ledger next to it, as runs of one user do.
+    deps.setdefault("ledger_path", shared_ledger(out))
     return Runner(
         plan,
         config=config,
@@ -194,3 +196,8 @@ def runner(
         out=out,
         deps=RunnerDeps(environ=environ, out=stdout or io.StringIO(), sleep=lambda s: None, **deps),
     )
+
+
+def shared_ledger(out: Path) -> Path:
+    """The tests' shared ledger for an output directory: beside it, never the real one."""
+    return out.parent / "state" / "ledger.jsonl"

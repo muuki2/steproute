@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from steproute import __version__
+from steproute.eval.data import COST_BASIS
 from steproute.eval.results import Evaluation
 
 __all__ = ["DEFINITIONS", "METRICS_VERSION", "REPORT_FORMAT", "build_report", "write_report"]
@@ -19,13 +20,14 @@ METRICS_VERSION = "1"
 
 #: One line per metric; the full text is docs/EVALUATION.md, "Metric definitions".
 DEFINITIONS: dict[str, str] = {
+    "cost_basis": COST_BASIS,
     "unit": "A task on the grid; a logged step for off-policy estimates.",
     "success_rate": (
         "Mean success over units. Unlabelled outcomes are excluded from the headline and "
         "bounded in the 'unlabelled_sensitivity' diagnostic; they are never failures."
     ),
-    "cost_per_task": "Mean realized cost in USD per task, failures included.",
-    "cost_per_step": "Mean realized cost in USD per logged step, failures included.",
+    "cost_per_task": "Mean list-price cost in USD per task, failures included.",
+    "cost_per_step": "Mean list-price cost in USD per logged step, failures included.",
     "cost_per_solved": (
         "Total spend divided by units solved (mean cost / success rate), so failed attempts "
         "are paid for. Null when nothing is solved; an unbounded interval is flagged."
@@ -104,6 +106,7 @@ def build_report(
         "steproute_version": __version__,
         "generated_at": time.time(),
         "command": None if command is None else list(command),
+        "cost_basis": COST_BASIS,
         "settings": settings,
         "definitions": DEFINITIONS,
         "verdicts": verdicts,

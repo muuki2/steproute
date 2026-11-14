@@ -12,7 +12,7 @@ Decided by the maintainer on 13 Nov 2026:
 
 Decided by the maintainer on 13 Nov 2026, after Gate A (issue 57):
 
-- **DeepSeek has $10 in total**, funded once. It is not a monthly allowance. The runner enforces it as a total budget per ledger, next to a $10 monthly cap.
+- **DeepSeek has $10 in total**, funded once. It is not a monthly allowance. The runner enforces it as a total budget over the shared spend ledger (every output directory, issue 60; `docs/REPLAY.md`, "The spend ledger"), next to a $10 monthly cap.
 - **Every DeepSeek call runs off-peak** (outside 01:00-04:00 and 06:00-10:00 UTC on weekdays), at half price. The runner starts a DeepSeek run only when off-peak lasts at least the 2-hour run timeout, and never sends a DeepSeek call in peak hours.
 - **No DeepSeek configuration is dropped from the pilot.** Its DeepSeek block (100 runs) is $17.57 central at peak, $8.79 off-peak: it fits in $10 at the central estimate, not at the high one ($44.43 off-peak), where the budget stops DeepSeek and the rest stays pending.
 

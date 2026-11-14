@@ -47,13 +47,13 @@ JSON Lines in the trace store's line shape, `{"type": ..., "v": "0.1", "data": {
 | `task_id` | string | yes | Task id; the join key to `StepState.task_id` and to issue 19's splits. |
 | `model`, `effort` | string | yes | The configuration, fixed for the whole run. `effort` is in the effort vocabulary. |
 | `success` | bool or null | yes | The task check's result. `null` = no usable label (harness error, timeout before the check). Never a failure. |
-| `cost_usd` | number or null | yes | Realized cost of the whole run. `null` = unknown. |
+| `cost_usd` | number or null | yes | The **billed** cost of the whole run. `null` = unknown. An off-peak DeepSeek run is billed at half its list price, so this is not the figure the evaluator compares on (section 2.3). |
 | `latency_ms` | number or null | no | Wall-clock time of the run. |
 | `run_id` | string or null | no | Unique per run. |
 | `session_id` | string or null | no | The run's session in the trace store, so per-step traces join to the run (`StepState.session_id`). |
 | `repeat` | int | no (0) | Repetition index of the same task and configuration. |
 | `ts` | number or null | no | Unix seconds. |
-| `meta` | object | no | Free (runner version, spend-cap state, ...). |
+| `meta` | object | no | Free (runner version, spend-cap state, ...). The evaluator reads `meta.list_cost_usd` (the same usage at the catalog's peak price) and `meta.calls_by_period` (calls per period: `peak`, `offpeak`, `flat`). |
 
 **Task** (`GridTask`): `task_id`; `split` (`train`, `validation`, `test`, or a held-out-model split name; issue 19); `state`, the `StepState` a router sees at task start (when absent, `task_state` builds a minimal replay state from `features`, with `features["prompt_tokens"]` if present); `features`, passed through untouched for issue 21's tabular and issue 24's graph predictor to join on (repository, language, task size, probe results, ...).
 
@@ -63,11 +63,31 @@ JSON Lines in the trace store's line shape, `{"type": ..., "v": "0.1", "data": {
 {"type":"run","v":"0.1","data":{"task_id":"django-1234","model":"claude-haiku-5-5","effort":"low","success":false,"cost_usd":0.021,"latency_ms":91000,"run_id":"r-17","session_id":"s-17","repeat":0,"ts":1767225600.0,"meta":{}}}
 ```
 
-A **cell** is all runs of one task under one configuration. Its success is the mean of its labelled runs, its cost and latency the means of the runs that report them. It is **complete** when every run is labelled and costed.
+A **cell** is all runs of one task under one configuration. Its success is the mean of its labelled runs, its cost and latency the means of the runs that report them. It is **complete** when every run is labelled and has a list cost.
 
 ### 2.2 Logged traces (`load_logged`)
 
-The existing trace store directory or a `steproute traces export` file; nothing new is written. The evaluator reads, per decision: the logged `state`, `action`, `propensity`, the candidate set (explicit, or rebuilt from `candidate_set` with `rebuild_candidates` and the catalog), and from the last outcome `success`, `cost_usd` (or, for a single-step outcome without a reported cost, the price of its token counts from the catalog). A decision without an outcome is kept, unlabelled and uncosted, and counted. The **resampling cluster** is `task_id` when the state has one, else `session_id`.
+The existing trace store directory or a `steproute traces export` file; nothing new is written. The evaluator reads, per decision: the logged `state`, `action`, `propensity`, the candidate set (explicit, or rebuilt from `candidate_set` with `rebuild_candidates` and the catalog), and from the last outcome `success`, the token counts and `cost_usd` (how they become a cost: section 2.3). A decision without an outcome is kept, unlabelled and uncosted, and counted. The **resampling cluster** is `task_id` when the state has one, else `session_id`.
+
+### 2.3 The cost basis: list price
+
+Every comparison, ranking, frontier and verdict uses the list price: the catalog's peak price applied to the token counts. It is the same whatever hour the run happened in and however the session was paid for. The billed cost is reported next to it where the two differ, and is never used for a verdict. Every report and the CLI print this sentence:
+
+> Every cost used to compare, rank or judge is list price: the catalog's peak price applied to the token counts, the same whatever hour the run happened in and however the session was paid for; the billed cost is reported next to it where the two differ and is never used for a verdict.
+
+How the list cost is found, in this order. The report counts rows by source (`provenance.cost_basis.list_cost_source`).
+
+| Data | Source | Rule |
+|---|---|---|
+| Logged outcome | `tokens` | The outcome has token counts, is a single attempt, has a model in the catalog and no `usage_missing` signal: priced with `realized_cost` from the catalog. The stored `cost_usd` is not trusted when the tokens are there. This covers subscription traces (the Claude Code and dsh plugins store `cost_usd = 0` with `signals.billing = "subscription"`) and API traces alike. |
+| Logged outcome | `reported` | No usable tokens (for example an escalated outcome, priced per attempt by the proxy): the stored `cost_usd`, taken as a list cost because the proxy prices at catalog rates. Not used on a subscription, where the stored 0 is no price. |
+| Grid run | `stored_list` | `meta.list_cost_usd`, which the replay runner writes. The grid carries no token counts, so it cannot be priced from tokens here. |
+| Grid run | `billed_as_list` | No list cost is stored and no off-peak call is recorded: the billed `cost_usd` is the list cost. This covers hand-written grids and grids from before off-peak billing. It is an assumption, and the report says how many rows use it. |
+| Either | missing | Neither of the above, or off-peak calls and no stored list cost. **This is an error, not a zero**: the report counts it (`provenance.cost_basis.errors`, first 20 runs listed), the CLI prints `ERROR` on stderr, and the task (grid) or step (logged) is left out of the cost estimates. |
+
+Where the billed figure appears: on the grid, `provenance.cost_basis.billed_cost_per_task_where_different` for each configuration and `diagnostics.billed_cost_per_task` for each policy, only where it differs from the list cost and only when every evaluated run has a billed cost. On logged data, `provenance.cost_basis` gives the totals of both over the steps that have both; the billed cost is not estimated for a policy.
+
+Not verified: that a stored `meta.list_cost_usd` equals the catalog price of the run's tokens (the runner computes it per call; nothing here recomputes it). That the stored cost of a proxy trace is a list cost when it has no tokens. That the catalog's peak price is the one the provider charges outside the discount. No real pilot grid was read by this change.
 
 ## 3. Policies
 
@@ -82,7 +102,7 @@ CLI specifications: `fixed:EFFORT:MODEL`; `cascade:EFFORT:MODEL,EFFORT:MODEL[,..
 | Metric | Definition | Awkward cases |
 |---|---|---|
 | `success_rate` | Mean success over units; for a stochastic policy the exact expectation on the grid. | Unlabelled outcomes are excluded and bounded (section 9), never counted as failures. |
-| `cost_per_task` / `cost_per_step` | Mean realized USD per unit, failed attempts included. | |
+| `cost_per_task` / `cost_per_step` | Mean list-price USD per unit, failed attempts included (section 2.3). | |
 | `cost_per_solved` | Total spend / units solved = mean cost / success rate. | Nothing solved: value `null` with `"unbounded": true` and note "no task solved". An interval reaching infinity is flagged `ci_unbounded`. |
 | `quality_retention` | Success rate / success rate of the **strongest single configuration** (highest success on the same units, ties to the cheaper). | **Not capped**: above 1 means the policy solves more than the strongest configuration (a cascade can). |
 | `strongest_solved_retained` | Grid: of the tasks the strongest configuration solves, the share the policy also solves. | At most 1 by construction; logged data: `null` (no paired outcomes per step). |
@@ -208,13 +228,15 @@ Rejected: imputing unlabelled outcomes as failures in the headline (biases again
 ## 10. Reading the report
 
 ```
-format, metrics_version, steproute_version, generated_at, command, settings, definitions
+format, metrics_version, steproute_version, generated_at, command, cost_basis, settings, definitions
 verdicts[]      data, kind, level, policy, hindsight, status, beats_every_single_configuration, sentence
 summary[]       the sentences
 evaluations[]   one per --data
+  cost_basis                              the one-sentence cost basis (also at the top level)
   kind, level, scope                      what this data can and cannot show
   provenance                              files, sha256, counts: runs/decisions, unlabelled, uncosted,
                                           excluded tasks by reason, unsupported, candidate-set issues,
+                                          cost_basis{list-cost sources, billed figures, cost errors},
                                           reward model and how it was fitted
   frontier      configurations[], envelope[], excluded{}   each point with interval, n, ESS
   policies[]    metrics{}                 headline: value, ci, n, ess, note, unbounded flags
@@ -227,7 +249,7 @@ evaluations[]   one per --data
 
 Read in this order: the `scope`, the provenance counts (how much was excluded and why), the verdict and its reasons, then the margin and its interval. A `not_shown` verdict with a large point margin means "collect more or better data", not "probably beats".
 
-**The plot** (`--plot`, default next to `--out`, one SVG per dataset) shows score (success rate) against spend (mean cost per unit). Configurations are neutral circles with direct labels. The frontier is a dashed line. Each policy has its own marker shape, a direct label, interval whiskers and a legend entry stating its verdict, so identity never depends on colour alone. Light and dark themes follow the viewer, and every mark has a tooltip. It is written with the standard library, so the JSON report and the plot are always produced.
+**The plot** (`--plot`, default next to `--out`, one SVG per dataset) shows score (success rate) against spend (mean list-price cost per unit). Configurations are neutral circles with direct labels. The frontier is a dashed line. Each policy has its own marker shape, a direct label, interval whiskers and a legend entry stating its verdict, so identity never depends on colour alone. Light and dark themes follow the viewer, and every mark has a tooltip. It is written with the standard library, so the JSON report and the plot are always produced.
 
 ## 11. Dependencies
 

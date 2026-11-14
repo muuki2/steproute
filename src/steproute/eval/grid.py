@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from steproute.core.schema import Action
-from steproute.eval.data import Cell, ConfigKey, GridData, task_state
+from steproute.eval.data import COST_BASIS, Cell, ConfigKey, GridData, task_state
 from steproute.eval.frontier import Point, cost_at, envelope, success_at
 from steproute.eval.results import (
     BEATS,
@@ -84,10 +84,13 @@ def _label(k: ConfigKey) -> str:
     return f"{k[0]} ({k[1]})"
 
 
-def simulate_action(action: Action, cells: Mapping[ConfigKey, Cell]) -> TaskOutcome | str:
+def simulate_action(
+    action: Action, cells: Mapping[ConfigKey, Cell], *, billed: bool = False
+) -> TaskOutcome | str:
     """Expected outcome of ``action`` on one task from that task's cells, or the reason it
     cannot be scored. Only the cells the cascade can reach are needed: a step after one
-    whose runs all succeeded is never paid for, so its absence does not matter."""
+    whose runs all succeeded is never paid for, so its absence does not matter. The cost is
+    the list-price cost; ``billed=True`` gives the billed cost instead (for reporting only)."""
     reach = 1.0
     succ = cost = switches = changes = 0.0
     lat_sum = 0.0
@@ -100,16 +103,17 @@ def simulate_action(action: Action, cells: Mapping[ConfigKey, Cell]) -> TaskOutc
         cell = cells.get(_key(step))
         if cell is None:
             return f"no run of {step.label()}"
-        if cell.costed < cell.runs:
+        step_cost = cell.billed_cost if billed else cell.cost
+        if (cell.billed_costed if billed else cell.costed) < cell.runs:
             return f"uncosted run of {step.label()}"
         if cell.labelled < cell.runs:
             return f"unlabelled run of {step.label()}"
-        assert cell.success is not None and cell.cost is not None
+        assert cell.success is not None and step_cost is not None
         if prev is not None:
             n_sw += step.model != prev.model
             n_ch += 1
         s = cell.success
-        cost += reach * cell.cost
+        cost += reach * step_cost
         p_end = reach * (1.0 if j == len(chain) - 1 else s)
         if cell.latency is None:
             lat_ok = False
@@ -156,6 +160,7 @@ def _policy_data(
     tasks: Sequence[str],
     by_task: Mapping[str, Mapping[ConfigKey, Cell]],
     configs: Sequence[ConfigKey],
+    billed: bool = False,
 ) -> _PolicyData:
     outs: list[TaskOutcome | None] = []
     reasons: dict[str, int] = {}
@@ -185,7 +190,7 @@ def _policy_data(
         parts: list[tuple[float, TaskOutcome]] = []
         bad = None
         for a, p in dist:
-            o = simulate_action(a, cells)
+            o = simulate_action(a, cells, billed=billed)
             if isinstance(o, str):
                 bad = o
                 break
@@ -275,13 +280,17 @@ def _prepare(
     tasks: Sequence[str],
     configs: Sequence[ConfigKey],
     policies: Sequence[TargetPolicy],
+    billed: bool = False,
 ) -> _Prepared:
     by_task: dict[str, dict[ConfigKey, Cell]] = {}
     for (t, k), cell in grid.cells().items():
         by_task.setdefault(t, {})[k] = cell
     s = {k: [by_task[t][k].success or 0.0 for t in tasks] for k in configs}
-    c = {k: [by_task[t][k].cost or 0.0 for t in tasks] for k in configs}
-    pdata = [_policy_data(p, grid, tasks, by_task, configs) for p in policies]
+    c = {
+        k: [(by_task[t][k].billed_cost if billed else by_task[t][k].cost) or 0.0 for t in tasks]
+        for k in configs
+    }
+    pdata = [_policy_data(p, grid, tasks, by_task, configs, billed) for p in policies]
     vecs = [_vecs(pd, configs, s, c) for pd in pdata]
     return _Prepared(list(tasks), list(configs), s, c, pdata, vecs)
 
@@ -397,6 +406,7 @@ def evaluate_grid(
     configs = [k for k in grid.configs() if k not in excluded]
     tasks, by_reason, per_cfg, only_unl = _incomplete(grid, in_split, configs)
 
+    cells_all = grid.cells()
     prep = _prepare(grid, tasks, configs, policies)
     stat = _statistic(prep, st.cost_weight)
     n = len(tasks)
@@ -422,6 +432,23 @@ def evaluate_grid(
     cfg_rows = [
         (_label(k), est(f"cfg|{_label(k)}|s", n), est(f"cfg|{_label(k)}|c", n)) for k in configs
     ]
+
+    # The billed cost, beside the list cost and never used for a verdict. Only when every
+    # evaluated run has one, so the two are over the same tasks.
+    billed_pt: dict[str, float] = {}
+    if n and all(
+        (c := cells_all.get((t, k))) is not None and c.billed_costed == c.runs
+        for t in tasks
+        for k in configs
+    ):
+        billed_pt = _statistic(_prepare(grid, tasks, configs, policies, billed=True), None)([1] * n)
+
+    def differs(key: str) -> float | None:
+        """The billed value of ``key`` if it differs from the list value, else ``None``."""
+        b, c = billed_pt.get(key), point.get(key)
+        if b is None or c is None or math.isnan(b) or math.isnan(c):
+            return None
+        return b if abs(b - c) > 1e-9 * max(1.0, abs(c)) else None
 
     results: list[PolicyResult] = []
     for i, pd in enumerate(prep.policies):
@@ -515,6 +542,12 @@ def evaluate_grid(
             },
             "latency_tasks": v.latency_tasks,
         }
+        b_cost = differs(pre + "c")
+        if b_cost is not None:
+            diagnostics["billed_cost_per_task"] = num(b_cost)
+            diagnostics["billed_cost_note"] = (
+                "Billed, not used for the verdict; cost_per_task above is the list price."
+            )
         if sens_json:
             diagnostics["unlabelled_sensitivity"] = sens_json
         results.append(
@@ -539,14 +572,54 @@ def evaluate_grid(
             "Some cells have repeated runs: a cell's success is the mean of its runs, and a "
             "cascade treats repeats of different configurations as independent given the task."
         )
+    sources: dict[str, int] = {}
+    for r in runs:
+        src = r.list_cost[1]
+        sources[src] = sources.get(src, 0) + 1
+    cost_errors = [
+        {"task_id": r.task_id, "model": r.model, "effort": r.effort, "repeat": r.repeat}
+        for r in runs
+        if r.list_cost_usd is None
+    ]
+    cfg_billed = {
+        label: num(b)
+        for k in configs
+        if (b := differs(f"cfg|{_label(k)}|c")) is not None
+        for label in [_label(k)]
+    }
+    cost_basis: dict[str, object] = {
+        "statement": COST_BASIS,
+        "list_cost_source": sources,
+        "billed_cost_per_task_where_different": {"configurations": cfg_billed},
+        "billed_cost_compared": bool(billed_pt),
+        "errors": {
+            "runs_without_usable_cost": len(cost_errors),
+            "first_runs": cost_errors[:20],
+            "meaning": (
+                "A run with no list cost, and none recoverable from its billed cost, cannot be "
+                "priced. Its task is left out of the evaluation; it is never counted as free."
+            ),
+        },
+    }
+    if sources.get("billed_as_list"):
+        notes.append(
+            f"{sources['billed_as_list']} runs store no list cost; their billed cost is used as "
+            "the list cost because they record no off-peak call. This is an assumption."
+        )
+    if cost_errors:
+        notes.append(
+            f"{len(cost_errors)} runs have no usable cost (see provenance.cost_basis.errors); "
+            "their tasks are left out of the headline."
+        )
     provenance: dict[str, object] = {
+        "cost_basis": cost_basis,
         "source": grid.source,
         "sha256": grid.sha256,
         "header": grid.header,
         "skipped_lines": grid.skipped_lines,
         "runs": len(runs),
         "unlabelled_runs": sum(1 for r in runs if r.success is None),
-        "uncosted_runs": sum(1 for r in runs if r.cost_usd is None),
+        "uncosted_runs": len(cost_errors),
         "runs_without_latency": sum(1 for r in runs if r.latency_ms is None),
         "tasks_total": len(all_tasks),
         "split": split,

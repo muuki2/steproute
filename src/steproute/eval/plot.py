@@ -194,7 +194,7 @@ def render_svg(ev: Evaluation, title: str | None = None) -> str:
     add(f'<line class="axis" x1="{_L}" x2="{_L}" y1="{_T}" y2="{_T + ph}"/>')
     add(
         f'<text class="axis-label" x="{_L + pw / 2}" y="{_T + ph + 38}" text-anchor="middle">'
-        f"Spend: mean cost per {unit} (USD)</text>"
+        f"Spend: mean list-price cost per {unit} (USD)</text>"
     )
     add(
         f'<text class="axis-label" transform="translate({_L - 52},{_T + ph / 2}) rotate(-90)" '

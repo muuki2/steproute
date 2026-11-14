@@ -269,13 +269,15 @@ def make_grid(
             label: bool | None = ok
             if unlabelled_rate and rng.random() < unlabelled_rate:
                 label = None
+            cost = world.run_cost(d, cfg) * noise  # list price by construction
             runs.append(
                 GridRun(
                     task_id=tid,
                     model=cfg.model,
                     effort=cfg.effort,
                     success=label,
-                    cost_usd=world.run_cost(d, cfg) * noise,
+                    cost_usd=cost,
+                    meta={"list_cost_usd": cost},
                     latency_ms=cfg.ms_per_ktok * world.tokens[d] / 1000 * noise,
                     run_id=f"{tid}/{cfg.model}/{cfg.effort}",
                     session_id=f"{tid}/{cfg.model}/{cfg.effort}",

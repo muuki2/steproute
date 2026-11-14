@@ -14,11 +14,13 @@ steproute replay preflight --plan pilot --out DIR [--config ...] [--env-file F] 
 steproute replay run       --plan pilot --out DIR [--config ...] [--env-file F]   # a DRY RUN, the same as `plan`
 steproute replay run       --plan pilot --out DIR --config replay.toml --execute   # the real run
 steproute replay resume    --out DIR --execute                     # continue the plan recorded in DIR
-steproute replay status    --out DIR                               # attempts, statuses, spend per month
+steproute replay status    --out DIR                               # attempts, statuses, spend per month (this directory and all)
 steproute replay report    --out DIR [--md docs/results/pilot.md]  # the pilot report
+steproute replay ledger show   [--config ...]                      # the shared spend ledger: where, spend, reservations
+steproute replay ledger import --out DIR [--config ...]            # bring DIR's own ledger.jsonl into the shared ledger, once
 ```
 
-`--env-file` also works on `resume`; see "Keys" below.
+`--env-file` also works on `resume`; see "Keys" below. Every command takes `--ledger PATH` to use another shared ledger (see "The spend ledger").
 
 Exit codes of `run` and `resume`: `0` every cell finished; `4` some cells are still pending (a cap, the total budget or an out-of-funds answer stopped a provider; resume when there is budget); `3` a fatal stop (the executed configuration differed from the plan); `130` interrupted; `2` a configuration problem or a missing key (nothing ran); `1` from `preflight` when something required is missing.
 
@@ -36,7 +38,7 @@ Exit codes of `run` and `resume`: `0` every cell finished; `4` some cells are st
    - About 120 GB of free disk for the images.
 2. **Write `replay.toml`** (below). Keep the default caps unless Gate A says otherwise.
 3. **Pre-flight:** `steproute replay preflight --plan pilot --out runs/pilot --config replay.toml`. Fix every `FAIL`. It checks the Docker daemon, the images, the harness and rows, each key (set or not, never the value; it cannot check that a key is valid without spending), Ollama and its models, and free disk.
-4. **Dry run:** `steproute replay plan --plan pilot --out runs/pilot --config replay.toml`. Read the order, the estimate per provider with its low-high range, the caps, month-to-date spend and the worst case per run.
+4. **Dry run:** `steproute replay plan --plan pilot --out runs/pilot --config replay.toml`. Read the order, the estimate per provider with its low-high range, the caps, month-to-date and all-time spend (from the shared ledger, every output directory), the ledger's path, and the worst case per run.
 5. **The real run:** the same with `steproute replay run ... --execute`. It prints the same plan again, then starts. Local runs (one model at a time) and paid runs (two in parallel by default) go in two lanes at once. It can run for many hours; it needs no attention.
 6. **Interrupt and resume:** Ctrl-C stops after the calls in flight and records those runs as interrupted. `steproute replay resume --out runs/pilot --execute` continues, and so does a resume after a crash, a reboot or a cap stop (next month the cap resets).
 7. **The report:** `steproute replay report --out runs/pilot` writes `docs/results/pilot.md`: realised cost per configuration, success rates (overall and per stratum), the cache-read share actually observed, steps per run, run statuses, spend per provider and month, the stage-gate decision, and the sparse-grid estimate redone from the measured values.
@@ -52,7 +54,7 @@ anthropic = 80.0
 deepseek = 10.0
 # allow_raise = true      # required to set a cap ABOVE its default (only after Gate A)
 
-[totals]                  # USD per provider over ALL months of this ledger; none for Anthropic
+[totals]                  # USD per provider over ALL months and ALL output directories; none for Anthropic
 deepseek = 10.0           # DeepSeek was funded once with $10 (13 Nov 2026)
 # allow_raise = true      # required to set a total ABOVE its default
 
@@ -95,25 +97,93 @@ manage_ollama = true      # unload the previous local model before the next
 [check]                   # unset: the pinned harness and the fetched rows in the project
 # harness = [".cache/steproute/swebench-env/bin/python", "-m", "swebench.harness.run_evaluation"]
 # rows = ".cache/steproute/SWE-bench_Verified.jsonl"
+
+[ledger]                  # unset: $STEPROUTE_LEDGER, else the per-user state directory
+# path = "/somewhere/kept/steproute-ledger.jsonl"   # relative paths are relative to this file
 ```
 
 ## The safety model, in plain terms
 
 - **Nothing runs by default.** Every command is a dry run unless it is `run` or `resume` with `--execute`. Before the first paid call a real run prints the plan, the estimated spend per provider with its range, the caps and month-to-date spend.
-- **The caps cannot be passed.** Before every paid run the runner asks: month-to-date spend (from the ledger) + what every run in flight could still spend + this run's worst case ≤ the provider's monthly cap? And, for a provider with a total budget (`[totals]`, DeepSeek $10), the same with all-time spend in this ledger against the total. If not, that provider stops; its cells stay pending; other providers and local runs carry on. The check is made under one lock, so parallel runs cannot jointly pass a cap: each admitted run holds a reservation of (its bound - what it has spent) until it ends. The total is kept per ledger, that is per output directory: a second output directory would start again at $0, so the pilot and the sparse grid must share one directory (they are meant to) or the total must be lowered by hand.
+- **The caps cannot be passed.** Before every paid run the runner asks: month-to-date spend (from the shared ledger, every output directory) + what every run in flight could still spend, in this runner or any other on the same ledger + this run's worst case ≤ the provider's monthly cap? And, for a provider with a total budget (`[totals]`, DeepSeek $10), the same with all-time spend in the shared ledger against the total. If not, that provider stops; its cells stay pending; other providers and local runs carry on. The check is made under one lock across threads and processes, so parallel runs cannot jointly pass a cap: each admitted run holds a reservation of (its bound - what it has spent) until it ends, written to the ledger. A new output directory does not start again at $0 (issue 60); see "The spend ledger" below.
 - **Budget: the whole cap is usable.** When less than a full worst case is left, but at least `min_run_budget_usd` plus one worst-case call, the run starts with a reduced budget: its reservation is exactly the headroom left, and it stops before its next call once its spend reaches (headroom - one worst-case call). That stop is `budget_stop`: not a model failure, not in the grid, not retried now, run again by a later resume when there is budget, and not counted against `max_retries`. A run with the full bound still stops at `run_cap_usd` as `run_cap`, unchanged. The default floor of $0.50 is about twice the central off-peak cost of the dearest DeepSeek run (v4-pro high, $0.23) and 1.5 times it at 1.5 times the estimate, so a run that starts on the last dollars usually finishes instead of being thrown away. What stays unusable is less than the floor plus one worst-case call: $0.58 with flash, $0.83 with v4-pro, so at least 92% of DeepSeek's $10 can be spent. In the test that simulates the pilot's DeepSeek block at 1.5 times the central estimate, $9.44 was spent and 11 of 100 cells were left pending.
 - **The worst case of a run** is `run_cap_usd` plus the worst case of one call. The per-run cap is checked before every call, so a run can pass it by at most one call. One call costs at most a `max_prompt_tokens` prompt billed entirely at the highest input rate (a cache write where writes cost extra, at the highest price tier) plus `max_output_tokens` of output, priced with `price_usage` from the catalog; the prompt bound is enforced before each call from the provider's last reported prompt size plus a deliberately high estimate (2 characters per token) of what was added, and a run whose next prompt could pass it ends as `context_limit`. With the defaults: Haiku $3.17, Sonnet $3.66, Opus $4.33, Fable $5.66, DeepSeek flash $3.08, v4-pro $3.33 (all at peak, list prices: reservations never assume the off-peak discount). The cost of that safety: near the end of a budget, with two paid runs in parallel, one worker waits for the other to finish, and the last dollars are used through reduced budgets (next point). Lowering `max_prompt_tokens` or `run_cap_usd` tightens the bound. *Rejected:* checking the estimate instead of the worst case (the high scenario is 4 times the central one, so an estimate-based check could overshoot by a lot); stopping at the first call that passes the cap (that would pass the cap by a whole call every time).
 - **Realised cost** is the provider's reported usage priced with `price_usage` from the catalog, per call. A call whose usage is missing (or all zero: LiteLLM fills in zeros when the provider sends none) is charged its worst case and flagged `missing_usage`, never $0. A DeepSeek call is priced at off-peak rates only if both its start and its end fall in off-peak hours (`src/steproute/core/offpeak.py`); otherwise at peak. DeepSeek does not document how a call that crosses a boundary is billed, so this is the safe reading. Each settle line records the `period` (`peak`, `offpeak` or `flat`) and `list_usd`, the same usage at peak (list) price.
 - **Off-peak only (DeepSeek, default).** A DeepSeek run starts only when off-peak hours stay open for at least `start_margin_s` (default: the 2-hour run timeout), so a normal run ends before peak starts. While DeepSeek waits, the paid workers take other providers' runs in plan order; when only DeepSeek runs are left, the runner sleeps and prints until when, in UTC and local time. The backstop is in the run's client: no call is sent in peak hours or with less than `call_margin_s` of off-peak left; the run pauses (keeping its reservation) until off-peak resumes, and the pause does not count against `run_timeout_s`. Waiting runs are deferred, never dropped or failed. Chinese public holidays (off-peak at DeepSeek) are treated as working days, because we cannot verify the holiday calendar; that only costs waiting time.
 - **Out of funds.** An HTTP 402 or an "insufficient balance" answer ends the run as `balance_stop` and halts that provider for the rest of the invocation. The cell stays pending; nothing is retried and nothing is labelled a failure.
-- **The ledger** (`ledger.jsonl`) is the single source of truth for the caps: append-only, `fsync`-ed, keyed by provider and month. Each paid call writes an intent with its worst case *before* the call and a settle line with the realised cost *after*. Month-to-date = settled amounts + the worst case of every unsettled intent. A crash at any point therefore over-counts, never under-counts: killed during a call, the worst case stays charged; a torn line (killed mid-write) is closed with a newline and skipped on reading, and a torn intent means the call never started.
+- **The ledger** is the single source of truth for the caps: one shared, append-only, `fsync`-ed file for every output directory (where it lives and why: "The spend ledger" below). Each paid call writes an intent with its worst case *before* the call and a settle line with the realised cost *after*. Month-to-date = settled amounts + the worst case of every unsettled intent. A crash at any point therefore over-counts, never under-counts: killed during a call, the worst case stays charged; a torn line (killed mid-write) is closed with a newline and skipped on reading, and a torn intent means the call never started.
 - **The month is the UTC calendar month** of the moment a call starts. Provider consoles report usage in UTC, and the time zone and daylight saving of the machine then do not matter. A run that crosses midnight at the end of the month charges each call to the month it started in.
 - **Resume is driven only by what is durably recorded.** `runs.jsonl` holds a start line before a run's first call and an end line when it is over. A cell (task, configuration, repeat) is finished when its latest attempt ended with a terminal status. A run that was in flight when the process died has a start and no end; on resume it is closed as `interrupted`, its spend stays in the ledger, and **the cell is run again**: an interruption is the runner's fault, not the model's, so it says nothing about the task; leaving the cell empty would lose it from the matrix; and the cost of re-running is at most one run per paid slot, already bounded by the cap. Re-runs are bounded by `max_retries`; the abandoned attempt's traces stay in the store under its own session id, and the grid only ever lists the final attempt.
-- **Two runners cannot both spend:** a run takes an exclusive `flock` on `DIR/.lock`; a second runner exits at once. The kernel drops the lock when a process dies.
+- **Two runners on one directory cannot both spend:** a run takes an exclusive `flock` on `DIR/.lock`; a second runner exits at once. The kernel drops the lock when a process dies. Runners on **different** directories may run at the same time: they share the ledger, its lock and each other's reservations, so together they stay under every cap and total.
 - **Keys** come only from the environment variables the config names. `--env-file PATH` (on `run`, `resume` and `preflight`) loads `NAME=value` lines into the runner's own environment first: an optional leading `export`, an optional pair of single or double quotes around the value, `#` comment lines, blank lines, no final newline needed, no interpolation. A variable already set in the environment wins. Every value from the file goes into the redactor. An unreadable file or a malformed line is an error naming only the line number, never its content. The runner never prints, logs or writes them: the dry run shows only "set" or "NOT set", every message and artefact passes through a redactor that replaces the configured key values, and the agent's commands run in a workspace that sees a fixed, harmless environment (no host variables beyond `PATH`), so `env` inside a task shows no key. Only the run's own upstream gets the one key it needs. Per decision D7, the runner uses API keys only; it has no way to use the Claude subscription.
 - **The configuration that ran is the one recorded.** Every call is checked: the proxy's response headers (`X-Steproute-Mode` must be `route`, `X-Steproute-Model` and `X-Steproute-Effort` must be the planned ones), the decision the proxy logged, and the outcome's `final_model`. Any difference fails the run as `config_mismatch` and stops the whole runner, because it means a bug that would corrupt every later run.
 - **Isolation between runs:** a fresh session id and a fresh proxy per run (so no session or cache state carries over), and a random per-run nonce as the first line of the system prompt, so two runs of the same model cannot read each other's provider cache: Anthropic caches per model and workspace (`docs/INTEGRATION-NOTES.md` section 7), and the nonce makes every run's cached prefix unique from the system prompt on. The one-tool definition before it is identical across runs and below Anthropic's 512-token minimum, so nothing cacheable is shared.
 - **Prompt caching is watched.** The task-set estimate assumes Anthropic prompt caching works through the proxy; without it every Claude run costs about 3.2 times as much. After `cache_canary_runs` finished Anthropic runs of at least 5 calls, if less than `min_cache_read_share` of their input was read from the cache, the runner stops Anthropic with a message (the "cache canary"). *(Not tested against the real API.)*
+
+## The spend ledger
+
+Issue 60. Until then each output directory had its own ledger, so a run in a new directory started again at $0 against the monthly caps and DeepSeek's $10 total. Now there is **one ledger for every output directory**, and every limit is counted over it.
+
+### Where it lives, and why
+
+| Order | Source | Example |
+|---|---|---|
+| 1 | `--ledger PATH` on the command line | a scratch ledger for a try by hand |
+| 2 | `[ledger] path` in the replay config (relative to the config file) | the project's `replay.toml` |
+| 3 | the environment variable `STEPROUTE_LEDGER` | |
+| 4 | the default: `$XDG_STATE_HOME/steproute/ledger.jsonl` when `XDG_STATE_HOME` is set (and absolute), else `~/.local/state/steproute/ledger.jsonl` | |
+
+`plan`, `run`, `status` and `ledger show` print the path in use and which of these chose it. The default is a per-user **state** directory: the XDG place for data that must survive restarts and is not a document. Not a cache (`.cache/` is meant to be clearable, and this is a record of money spent), not the repository (it would differ per checkout or worktree and could be committed or deleted with one), and not an output directory (that was the defect). Per user rather than per project, because the money is one API account: two checkouts of the project spend the same $10.
+
+Next to the ledger the runner keeps `ledger.jsonl.lock` (the admission lock) and `ledger.jsonl.owners/` (one small lock file per live runner, see "After a crash"). The ledger is small; back it up with the output directories. It is meant for **one machine**: `flock` is not reliable on network file systems, so do not put it on a network share or in a folder synced between machines.
+
+**Moving it.** Stop every runner, move `ledger.jsonl` (the `.lock` file and the `.owners` directory can be deleted while no runner runs), then set `[ledger] path` in the config, which `resume` picks up from the recorded `--config`; `--ledger` and `STEPROUTE_LEDGER` are not recorded, so they must be given again on every command. A runner pointed at the wrong (for example a new, empty) ledger stops before spending, because its directory's spend is unknown to that ledger (below).
+
+### How the limits are counted
+
+The ledger's lines, each carrying `out`, the absolute path of the run's output directory:
+
+| Kind | Written | Meaning |
+|---|---|---|
+| `intent` | before each paid call | the call's worst case, charged until settled |
+| `settle` | after the call | the realised cost (`usd`), its `period` and `list_usd` |
+| `reserve` | when a run is admitted | the run's reservation (`usd`), its owner (a lock file) and its process id (for people only) |
+| `release` | when the run ends, or when its owner is found dead | the reservation no longer counts |
+| `import` | by `ledger import` | the record of an import; the imported lines are ordinary intents and settles |
+
+Month-to-date spend is every intent of the current UTC month, every directory; all-time spend is every intent. Settled intents count their realised cost, open ones their worst case. In flight is, for each reservation not released, its amount minus what its run has spent (never below zero). A run is admitted when spend + in flight + its bound fits under the monthly cap and, for a provider with one, the total. The check takes an exclusive `flock` on `ledger.jsonl.lock` and re-reads what other runners appended first, and the reservation is written before the lock is let go, so no two runners can both take the same headroom. A runner's spend inside its reservation does not change the sum (spent goes up as in flight goes down), so a runner that reads the ledger a moment late never sees more room than there is.
+
+A runner refused because another runner holds the headroom stops that provider for the rest of the invocation, as at a cap: its cells stay pending, the exit code is 4, and a resume continues when the other runner has finished. It waits only for its own runs in flight, not for other runners.
+
+### The per-directory view
+
+Every intent and settle line is also appended to the run's own `DIR/ledger.jsonl`, after the shared ledger (the shared ledger is the one the caps read, so it is written first). `report` and `status` read that file for what the directory's runs spent; `status` also prints the shared totals, and `ledger show` lists spend per directory. If a runner dies between the two writes, the next real run in that directory copies the missing lines from the shared ledger and says so.
+
+### Bringing in a directory written before the shared ledger
+
+A directory written before issue 60 has its spend only in its own `ledger.jsonl`. A real run there **refuses to start** (exit 2) and names the fix; a dry run, `plan`, `preflight` (check `spend ledger`) and `status` say the same. The fix:
+
+```
+steproute replay ledger import --out DIR [--config replay.toml]
+```
+
+It takes the directory's lock (it refuses while a runner is running there), adds every intent and settle line the shared ledger does not hold yet, matched by kind and intent id, tagged with `out` and `imported: true`, and writes one `import` line. Running it again adds nothing. Lines written before issue 57 (no `period`, no `list_usd`) are taken as they are and count in the period `unknown`; an intent that was never settled is imported open and stays charged at its worst case; torn lines are skipped and counted. The directory's own file is not changed. Spend is counted where it happened: the imported lines keep their timestamps and months.
+
+**The pilot run before issue 60** (`runs/pilot`), step by step:
+
+1. Let the pilot runner finish or stop it (Ctrl-C). The import refuses while it holds the directory.
+2. Update steproute to the version with the shared ledger.
+3. `steproute replay ledger import --out runs/pilot --config replay.toml` (the config the pilot used). It prints the ledger it wrote to and how many calls and settlements it added.
+4. `steproute replay ledger show --config replay.toml` and `steproute replay status --out runs/pilot --config replay.toml`: the shared ledger's spend per provider and month must equal the directory's.
+5. Every later run, in `runs/pilot` or any other directory, now counts the pilot's spend; `steproute replay plan` shows it as month-to-date and, for DeepSeek, as spent of the $10 total.
+
+### After a crash
+
+- **Killed during a paid call** (between intent and settle): the intent stays open and is charged at its worst case, in every directory's limits, for good. Nothing settles it later; that over-counts, never under-counts.
+- **Killed while holding reservations:** each runner holds an exclusive `flock` on its own file `ledger.jsonl.owners/<owner id>.lock` for as long as it lives, and its `reserve` lines name that owner. The kernel drops the lock when the process dies, however it dies (crash, kill, power loss). The next admission by any runner finds the file unlocked, writes a `release` line ("its runner ended without releasing it") and prints it. What the dead runner spent stays: settled calls at their cost, open intents at their worst case. Process ids play no part, so a reused process id cannot keep or free a reservation.
+- **In doubt, the money is held:** a reservation whose owner file is missing (deleted by hand) or cannot be checked stays held. To free it, make sure no runner is running, then create the empty file `ledger.jsonl.owners/<owner>.lock` with the owner id from the `reserve` line; the next admission finds it unlocked and releases the reservation.
+- **Killed between the shared and the directory write:** repaired by the next run in that directory (above).
+- **A torn line** (killed mid-write): closed with a newline by the next write and skipped on reading, as before.
 
 ## Design decisions
 
@@ -147,7 +217,7 @@ Each run starts its own in-process proxy on a fresh loopback port (`proxyrun.Run
 | `traces/` | The trace store of every step (pool models), `source = "replay"`, no prompt text | **yes** (export with `steproute traces export --scrub`) |
 | `traces-holdout/` | The holdout model's step traces, in their own store so they can never enter training data by accident | **yes**, as its own split |
 | `runs.jsonl` | The run journal: start and end of every attempt | yes (provenance) |
-| `ledger.jsonl` | The spend ledger | yes (provenance; no prompt content) |
+| `ledger.jsonl` | This directory's copy of its own lines in the shared spend ledger (intents and settles, each tagged `out`); what `report` and `status` read for the directory's spend. The caps read the shared ledger | yes (provenance; no prompt content) |
 | `plan.json`, `gate.json` | The plan's identity and inputs; the stage-gate decision | yes |
 | `runs/<run_id>/result.json` | Status, reason, steps, usage, cost of one attempt | yes |
 | `runs/<run_id>/patch.diff`, `check.json` | The submitted patch and the check result | yes (patches are model output on permissive repositories) |
@@ -206,4 +276,5 @@ Everything below needs a paid provider, or more time on the real machine than is
 - **DeepSeek's real out-of-funds answer.** Tested with the mock's HTTP 402, passed through LiteLLM as status 402. The real body and LiteLLM's mapping of it were never seen; the text "insufficient balance" is also matched.
 - **Real step counts and costs** of the 5.5 and 5.2 Claude models and the current DeepSeek models on this scaffold, which the pilot exists to measure.
 - **Wall time**: hours of unattended running, and the 2-hour per-run timeout (`run_timeout_s`; no real run came near it, the longest took under 4 minutes).
+- **The shared ledger under real, long runs.** Two runners in two directories on one ledger are tested with real processes against the mock (`tests/test_replay_shared_ledger.py`), as are a killed runner's reservation and a kill between intent and settle; two real runners side by side for hours, and the ledger on anything but a local disk, were not tried.
 - **The proxy's privacy rule on real repositories.** Test fixtures in SWE-bench repositories may contain secret-shaped strings; a step that trips the detector is sent nowhere and the run ends `blocked_sensitive`. How often that happens is unknown.
