@@ -6,7 +6,12 @@ What is safe by default:
 * A real run takes the output directory's lock first; a second runner on it exits.
 * Every paid provider in the plan needs its key (DeepSeek explicitly) before anything runs.
 * Before each paid run, ``CapGuard.admit`` checks month-to-date spend (the ledger), plus what
-  runs in flight could still spend, plus this run's worst-case bound, against the monthly cap.
+  runs in flight could still spend, plus this run's worst-case bound, against the monthly cap
+  and the provider's total budget. When less than a full bound is left (but at least
+  ``min_run_budget_usd`` plus one worst-case call), the run gets that smaller budget and ends
+  as ``budget_stop`` (pending, not a failure) if it reaches it.
+* A provider with ``offpeak_only`` (DeepSeek by default) starts a run only when its off-peak
+  hours stay open for the start margin, and its client never sends a call in peak hours.
 * Each run has its own proxy, session and nonce; the configuration that executed is checked
   on every call, and a mismatch stops the whole runner.
 
@@ -31,16 +36,18 @@ from typing import Any, Protocol, TextIO
 
 from steproute import __version__
 from steproute.core.catalog import Catalog
+from steproute.core.offpeak import PeakHours, PeakHoursError, fmt_instant, peak_hours
 from steproute.core.policy import Policy
 from steproute.core.privacy import PrivacyConfig
 from steproute.core.store import TraceStore
 from steproute.eval.data import GridRun, GridTask, write_grid
 from steproute.replay.agent import AgentResult, BashAgent, RunStopped, Scaffold
 from steproute.replay.config import ReplayConfig
-from steproute.replay.journal import LABELLED, RETRYABLE, Attempt, Journal, OutputLock
+from steproute.replay.journal import DEFERRED, LABELLED, RETRYABLE, Attempt, Journal, OutputLock
 from steproute.replay.ledger import CapExceeded, CapGuard, Ledger, month_of
 from steproute.replay.plan import ReplayPlan, RunSpec
 from steproute.replay.proxyrun import (
+    PAUSE_CHUNK_S,
     ConfigMismatch,
     ProxyChatClient,
     Redactor,
@@ -141,6 +148,9 @@ class RunnerDeps:
     sleep: Callable[[float], None] = time.sleep
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     out: TextIO = field(default_factory=lambda: sys.stdout)
+    #: Values to scrub from everything the runner writes, besides the configured keys (every
+    #: value loaded from ``--env-file``).
+    secrets: Sequence[str] = ()
 
 
 def run_bound(spec: RunSpec, catalog: Catalog, config: ReplayConfig) -> float:
@@ -150,6 +160,13 @@ def run_bound(spec: RunSpec, catalog: Catalog, config: ReplayConfig) -> float:
         return 0.0
     wc = worst_call_usd(catalog.get(spec.model), config.limits, local=False)
     return config.limits.run_cap_usd + wc
+
+
+def worst_call(spec: RunSpec, catalog: Catalog, config: ReplayConfig) -> float:
+    """The most one call of this run can cost, at the catalog (peak) price."""
+    if spec.local:
+        return 0.0
+    return worst_call_usd(catalog.get(spec.model), config.limits, local=False)
 
 
 def missing_keys(plan: ReplayPlan, config: ReplayConfig, environ: Mapping[str, str]) -> list[str]:
@@ -208,20 +225,59 @@ def describe_plan(
         c, lo, hi = (sum(s.est_usd[k] for s in ss) for k in range(3))
         cap = config.cap(prov)
         if cap is None:
-            hours = ""
-            lines.append(f"   {prov:<10} {len(ss):4d} runs  free (local){hours}")
+            lines.append(f"   {prov:<10} {len(ss):4d} runs  free (local)")
             continue
         mtd = ledger.spent(prov, month) if ledger else 0.0
         bound = max((run_bound(s, catalog, config) for s in ss), default=0.0)
+        sched = config.schedule(prov)
+        timed = [s for s in ss if peak_hours(catalog.get(s.model)) is not None]
+        offpeak = sched.offpeak_only and bool(ss) and len(timed) == len(ss)
+        price = "at peak (list) prices" if offpeak else ""
         lines.append(
-            f"   {prov:<10} {len(ss):4d} runs  ~{_fmt(c)} ({_fmt(lo)}-{_fmt(hi)})  "
-            f"cap {_fmt(cap)}/month, month-to-date {month} {_fmt(mtd)}, "
+            f"   {prov:<10} {len(ss):4d} runs  ~{_fmt(c)} ({_fmt(lo)}-{_fmt(hi)}) {price}".rstrip()
+            + f"  cap {_fmt(cap)}/month, month-to-date {month} {_fmt(mtd)}, "
             f"worst case per run {_fmt(bound)}"
         )
-        if hi > cap - mtd:
+        room = cap - mtd
+        total = config.total(prov)
+        if total is not None:
+            all_time = ledger.spent_total(prov) if ledger else 0.0
+            room = min(room, total - all_time)
             lines.append(
-                f"   {'':<10} the high estimate does not fit; the cap stops {prov} first "
-                "(cheapest first leaves a usable partial matrix)"
+                f"   {'':<10} total budget {_fmt(total)} (all months), spent so far "
+                f"{_fmt(all_time)}, left {_fmt(total - all_time)}"
+            )
+        if offpeak:
+            oc, olo, ohi = (sum((s.est_offpeak_usd or s.est_usd)[k] for s in ss) for k in range(3))
+            lines.append(
+                f"   {'':<10} scheduled off-peak only: ~{_fmt(oc)} ({_fmt(olo)}-{_fmt(ohi)}) "
+                f"at off-peak prices, against {_fmt(room)} left"
+                + ("; the central estimate fits" if oc <= room else "; does NOT fit")
+            )
+            ph = peak_hours(catalog.get(timed[0].model))
+            assert ph is not None
+            margin = config.start_margin(prov)
+            period = ph.period(now)
+            lines.append(
+                f"   {'':<10} now {fmt_instant(now)} is {period.replace('offpeak', 'off-peak')}"
+                + (
+                    f", off-peak until {fmt_instant(ph.offpeak_end(now))}"
+                    if period == "offpeak"
+                    else ""
+                )
+            )
+            start, end = ph.next_window(now, margin)
+            lines.append(
+                f"   {'':<10} next start (off-peak with {margin / 3600:g} h ahead): "
+                f"{fmt_instant(start)}, window closes {fmt_instant(end)}"
+            )
+            hi_cmp = ohi
+        else:
+            hi_cmp = hi
+        if hi_cmp > room:
+            lines.append(
+                f"   {'':<10} the high estimate does not fit; the budget stops {prov} first "
+                "(cheapest first leaves a usable partial matrix; unrun cells stay pending)"
             )
     lines += ["", "  keys (values are never shown):"]
     for prov in plan.paid_providers():
@@ -251,11 +307,17 @@ def describe_plan(
 # --- the grid ----------------------------------------------------------------------------
 
 
+def _retryable(attempts: Sequence[Attempt]) -> int:
+    """Attempts that count against ``max_retries``: a deferred one (``budget_stop``,
+    ``balance_stop``) does not."""
+    return sum(1 for a in attempts if a.status not in DEFERRED)
+
+
 def _done(attempts: Sequence[Attempt], max_retries: int) -> bool:
     last = attempts[-1]
     if last.terminal:
         return True
-    return last.status in RETRYABLE and len(attempts) > max_retries
+    return last.status in RETRYABLE and _retryable(attempts) > max_retries
 
 
 def write_grids(
@@ -298,6 +360,10 @@ def write_grids(
                 "steps": end.get("steps"),
                 "calls_missing_usage": end.get("calls_missing_usage", 0),
                 "scaffold": end.get("scaffold"),
+                # ``cost_usd`` above is what was billed (off-peak calls at off-peak prices);
+                # this is the same usage at the catalog's peak (list) price.
+                "list_cost_usd": end.get("list_cost_usd", end.get("cost_usd")),
+                "calls_by_period": end.get("calls_by_period", {}),
             },
         )
         holdout = model in catalog and catalog.get(model).holdout
@@ -334,8 +400,9 @@ def write_grids(
 
 @dataclass
 class _Lane:
+    """The paid specs not started yet, in plan order."""
+
     specs: list[RunSpec]
-    index: int = 0
 
 
 class Runner:
@@ -367,7 +434,8 @@ class Runner:
             for p in config.providers.values()
             if p.api_key_env
         ]
-        self.redact = Redactor(keys)
+        self.redact = Redactor([*keys, *self.deps.secrets])
+        self._announced: set[tuple[str, float]] = set()
         self.ledger: Ledger | None = None
         self.journal: Journal | None = None
         self.guard: CapGuard | None = None
@@ -471,9 +539,11 @@ class Runner:
         # was made (a local-only run used to leave no ledger at all).
         self.ledger.path.touch(exist_ok=True)
         self.journal = Journal.open(self.out / "runs.jsonl")
+        provs = self.plan.paid_providers()
         self.guard = CapGuard(
             self.ledger,
-            {p: c for p in self.plan.paid_providers() if (c := self.config.cap(p)) is not None},
+            {p: c for p in provs if (c := self.config.cap(p)) is not None},
+            {p: b for p in provs if (b := self.config.total(p)) is not None},
         )
         spent = {a.run_id: self.ledger.run_spent(a.run_id) for a in self.journal.in_flight()}
         for a in self.journal.close_interrupted(spent):
@@ -518,7 +588,20 @@ class Runner:
         if left:
             for prov, why in sorted(self.halted.items()):
                 self.say(f"replay: {prov} stopped: {why}")
-            self.say(f"replay: {len(left)} run(s) not run yet; `steproute replay resume` continues")
+            assert self.journal is not None
+            cells = self.journal.by_cell()
+            by_prov: dict[str, int] = {}
+            deferred = 0
+            for s in left:
+                by_prov[s.provider] = by_prov.get(s.provider, 0) + 1
+                att = cells.get(s.cell) or []
+                deferred += bool(att) and att[-1].status in DEFERRED
+            parts = ", ".join(f"{p} {n}" for p, n in sorted(by_prov.items()))
+            self.say(
+                f"replay: {len(left)} cell(s) pending ({parts}); {deferred} of them stopped early "
+                "for budget or balance. Pending cells are not failures and are not in the grid; "
+                "`steproute replay resume` continues"
+            )
             return EXIT_CAP
         return 0
 
@@ -538,6 +621,12 @@ class Runner:
         if self.ledger is not None:
             for (prov, month), usd in sorted(self.ledger.by_month().items()):
                 self.say(f"replay: ledger {prov} {month}: {_fmt(usd)}")
+            for (prov, period), (billed, listed) in sorted(self.ledger.by_period().items()):
+                if period in ("peak", "offpeak"):
+                    self.say(
+                        f"replay: ledger {prov} {period} calls: billed {_fmt(billed)} "
+                        f"(at peak list price {_fmt(listed)})"
+                    )
 
     def _pending(self) -> list[RunSpec]:
         assert self.journal is not None
@@ -630,51 +719,142 @@ class Runner:
             for w in workers:
                 w.join()
 
-    def _next(self, lane: _Lane) -> tuple[RunSpec, str] | None:
-        """The next paid spec this worker may start, holding its cap reservation, or ``None``
-        when nothing is left. Waits while a refusal could clear when a run in flight ends."""
-        assert self.guard is not None
-        with self._cv:
-            while lane.index < len(lane.specs):
-                if self.stop.is_set():
-                    return None
-                s = lane.specs[lane.index]
-                if s.provider in self.halted:
-                    lane.index += 1
-                    continue
-                bound = run_bound(s, self.catalog, self.config)
-                run_id = uuid.uuid4().hex[:16]
-                try:
-                    self.guard.admit(s.provider, run_id, bound)
-                except CapExceeded as exc:
-                    if self._in_flight.get(s.provider, 0) > 0:
-                        self._cv.wait(1.0)  # a run in flight may free its reservation
-                        continue
-                    self.halted[s.provider] = f"monthly cap: {exc}"
-                    self.say(f"cap: {exc}; no further {s.provider} runs this month")
-                    lane.index += 1
-                    continue
-                lane.index += 1
-                self._in_flight[s.provider] = self._in_flight.get(s.provider, 0) + 1
-                return s, run_id
+    # --- off-peak schedule ---
+
+    def _hours(self, spec: RunSpec) -> PeakHours | None:
+        """The model's peak hours when its provider runs off-peak only, else ``None``."""
+        if spec.local or not self.config.schedule(spec.provider).offpeak_only:
             return None
+        return peak_hours(self.catalog.get(spec.model))
+
+    def _gate(self, spec: RunSpec, now: float) -> float | None:
+        """``None`` when the run may start now; otherwise when its next off-peak stretch of at
+        least the start margin begins."""
+        hours = self._hours(spec)
+        if hours is None:
+            return None
+        margin = self.config.start_margin(spec.provider)
+        left = hours.offpeak_left(now)
+        if left > 0 and left >= margin:
+            return None
+        return hours.next_window(now, max(margin, 1.0))[0]
+
+    def _announce(self, provider: str, until: float, others: bool) -> None:
+        key = (provider, until)
+        if key in self._announced:
+            return
+        self._announced.add(key)
+        margin = self.config.start_margin(provider)
+        tail = (
+            "; other providers' runs continue meanwhile"
+            if others
+            else "; nothing else to run, waiting"
+        )
+        self.say(
+            f"schedule: {provider} runs only off-peak with at least {margin / 3600:g} h of "
+            f"off-peak ahead; the next start is {fmt_instant(until)}{tail}"
+        )
+
+    def _pick(self, lane: _Lane) -> tuple[RunSpec, str, float] | float | None:
+        """Under the lock: the next spec this worker may start (holding its reservation), or
+        when to try again (a float: an instant to sleep until; ``-1.0``: wait for a run in
+        flight), or ``None`` when nothing is left. Within a provider, specs keep plan order: a
+        provider whose next spec cannot start is passed over as a whole, and other providers'
+        specs are taken meanwhile."""
+        assert self.guard is not None
+        now = self.deps.clock()
+        passed: set[str] = set()
+        gated: dict[str, float] = {}
+        for s in list(lane.specs):
+            if self.stop.is_set():
+                return None
+            if s.provider in self.halted or s.provider in passed:
+                continue
+            try:
+                opens = self._gate(s, now)
+            except PeakHoursError as exc:
+                self.halted[s.provider] = f"schedule: {exc}"
+                self.say(f"schedule: {s.provider}: {exc}; its runs are left pending")
+                continue
+            if opens is not None:
+                gated[s.provider] = opens
+                passed.add(s.provider)
+                continue
+            bound = run_bound(s, self.catalog, self.config)
+            wc = worst_call(s, self.catalog, self.config)
+            run_id = uuid.uuid4().hex[:16]
+            try:
+                least = None if s.local else self.config.limits.min_run_budget_usd + wc
+                grant = self.guard.admit(s.provider, run_id, bound, least=least)
+            except CapExceeded as exc:
+                if self._in_flight.get(s.provider, 0) > 0:
+                    passed.add(s.provider)  # a run in flight may free its reservation
+                    continue
+                self.halted[s.provider] = f"budget: {exc}"
+                self.say(f"cap: {exc}; no further {s.provider} runs now (they stay pending)")
+                continue
+            lane.specs.remove(s)
+            self._in_flight[s.provider] = self._in_flight.get(s.provider, 0) + 1
+            for prov, until in gated.items():
+                self._announce(prov, until, others=True)
+            if grant < bound:
+                self.say(
+                    f"budget: {s.provider} has {_fmt(grant)} of headroom left, less than a full "
+                    f"run's {_fmt(bound)}; {s.model} {s.effort} on {s.task_id} runs with a "
+                    f"budget of {_fmt(grant - wc)} and stops as budget_stop if it reaches it"
+                )
+            # A full grant is the per-run cap exactly (no float residue from the subtraction).
+            return s, run_id, grant - wc if grant < bound else self.config.limits.run_cap_usd
+        lane.specs[:] = [s for s in lane.specs if s.provider not in self.halted]
+        if not lane.specs:
+            return None
+        busy = any(n > 0 for n in self._in_flight.values())
+        for prov, until in gated.items():
+            others = busy or any(s.provider not in gated for s in lane.specs)
+            self._announce(prov, until, others)
+        if gated and not busy and all(s.provider in gated for s in lane.specs):
+            return min(gated.values())
+        return -1.0
+
+    def _next(self, lane: _Lane) -> tuple[RunSpec, str, float] | None:
+        """The next paid spec this worker may start with its budget, holding its reservation,
+        or ``None`` when nothing is left. Waits while a refusal could clear when a run in
+        flight ends, and sleeps until off-peak when only gated runs are left."""
+        while not self.stop.is_set():
+            with self._cv:
+                got = self._pick(lane)
+                if got is None or isinstance(got, tuple):
+                    return got
+                if got < 0:
+                    self._cv.wait(1.0)
+                    continue
+            until = got
+            while not self.stop.is_set() and (now := self.deps.clock()) < until:
+                self.deps.sleep(min(PAUSE_CHUNK_S, until - now))
+        return None
 
     def _paid_worker(self, lane: _Lane) -> None:
         while not self.stop.is_set():
             taken = self._next(lane)
             if taken is None:
                 return
-            spec, run_id = taken
+            spec, run_id, budget = taken
             status = "infra_error"
             try:
-                status = self._run_cell(spec, run_id=run_id)
+                status = self._run_cell(spec, run_id=run_id, budget=budget)
             finally:
                 assert self.guard is not None
                 with self._cv:
                     self.guard.release(run_id)
                     self._in_flight[spec.provider] -= 1
+                    if status == "balance_stop" and spec.provider not in self.halted:
+                        self.halted[spec.provider] = (
+                            "the provider reported an insufficient balance (HTTP 402); its "
+                            "cells stay pending. Add funds, then resume."
+                        )
+                        self.say(f"replay: {spec.provider} halted: {self.halted[spec.provider]}")
                     if self._retry(spec, status):
-                        lane.specs.insert(lane.index, spec)  # next, through the cap check again
+                        lane.specs.insert(0, spec)  # next, through the cap check again
                     self._cv.notify_all()
 
     def _retry(self, spec: RunSpec, status: str) -> bool:
@@ -683,7 +863,7 @@ class Runner:
         if status not in ("provider_error", "infra_error") or self.stop.is_set():
             return False
         assert self.journal is not None
-        attempts = len(self.journal.by_cell().get(spec.cell, []))
+        attempts = _retryable(self.journal.by_cell().get(spec.cell, []))
         if attempts > self.config.limits.max_retries:
             return False
         self.deps.sleep(self.config.limits.call_backoff_s * attempts)
@@ -698,9 +878,14 @@ class Runner:
                 self.stores[name] = TraceStore(self.out / name, privacy=PrivacyConfig())
             return self.stores[name]
 
-    def _run_cell(self, spec: RunSpec, *, run_id: str | None = None) -> str:
+    def _run_cell(
+        self, spec: RunSpec, *, run_id: str | None = None, budget: float | None = None
+    ) -> str:
+        """Run one cell. ``budget``: the run's stop threshold (``None``: the per-run cap)."""
         assert self.journal is not None
         run_id = run_id or uuid.uuid4().hex[:16]
+        cap = self.config.limits.run_cap_usd
+        budget = None if spec.local or budget is None or budget >= cap else budget
         with self._cv:
             attempts = self.journal.by_cell().get(spec.cell, [])
             start = self.journal.record_start(
@@ -717,12 +902,18 @@ class Runner:
                     "provider": spec.provider,
                     "split": spec.split,
                     "plan": self.plan.name,
-                    "bound_usd": round(run_bound(spec, self.catalog, self.config), 6),
+                    "bound_usd": round(
+                        run_bound(spec, self.catalog, self.config)
+                        if budget is None
+                        else budget + worst_call(spec, self.catalog, self.config),
+                        6,
+                    ),
+                    "budget_usd": round(cap if budget is None else budget, 6),
                 }
             )
         t0 = time.monotonic()
         try:
-            end = self._execute(spec, start)
+            end = self._execute(spec, start, budget)
         except ConfigMismatch as exc:
             self.fatal = str(exc)
             self.stop.set()
@@ -737,6 +928,7 @@ class Runner:
         end.setdefault(
             "cost_usd", round(self.ledger.run_spent(run_id), 6) if not spec.local else 0.0
         )
+        end.setdefault("list_cost_usd", end["cost_usd"])
         end.setdefault("latency_ms", round((time.monotonic() - t0) * 1000, 1))
         end["reason"] = self.redact(str(end.get("reason", "")))
         rdir = self.out / "runs" / run_id
@@ -817,7 +1009,7 @@ class Runner:
             return LocalBackend()
         return SwebenchBackend(self._rows(), harness=self.config.harness)
 
-    def _execute(self, spec: RunSpec, start: Attempt) -> dict[str, Any]:
+    def _execute(self, spec: RunSpec, start: Attempt, budget: float | None) -> dict[str, Any]:
         assert self.ledger is not None
         run_id = start.run_id
         task = self.manifest.get(spec.task_id)
@@ -862,6 +1054,13 @@ class Runner:
                     ledger=self.ledger,
                     stop=self.stop,
                     sleep=self.deps.sleep,
+                    profile=self.catalog.get(spec.model),
+                    hours=peak_hours(self.catalog.get(spec.model)),
+                    offpeak_only=self.config.schedule(spec.provider).offpeak_only,
+                    call_margin_s=self.config.schedule(spec.provider).call_margin_s,
+                    clock=self.deps.clock,
+                    budget_usd=budget,
+                    notify=self.say,
                 )
                 try:
                     result = scaffold.run(text, ws, client, nonce=secrets.token_hex(8))
@@ -909,6 +1108,9 @@ class Runner:
         finally:
             ws.close()
         calls = client.calls
+        periods: dict[str, int] = {}
+        for c in calls:
+            periods[c.period] = periods.get(c.period, 0) + 1
         return {
             "status": status,
             "success": success,
@@ -924,4 +1126,8 @@ class Runner:
             },
             "check_status": check.status if check else None,
             "scaffold": scaffold.name,
+            # Billed (``cost_usd``, from the ledger) and the same usage at peak list price.
+            "list_cost_usd": round(self.ledger.run_list(run_id), 6) if not spec.local else 0.0,
+            "calls_by_period": periods,
+            "paused_s": round(client.paused_s, 1),
         }

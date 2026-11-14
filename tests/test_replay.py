@@ -165,9 +165,11 @@ EFFORTS3 = [HAIKU, ("claude-haiku-5-5", "medium"), ("claude-haiku-5-5", "high")]
 
 def _expensive(mock: Any) -> Any:
     """Runs of about $0.15 each (prompts of 80K to 128K tokens, Haiku's upper tier), a per-run
-    cap of $1, so the worst-case bound of a run is about $1.17."""
+    cap of $1, so the worst-case bound of a run is about $1.17. The smallest run budget is the
+    full cap: no reduced budgets, a run starts only with its full bound (the reduced budgets
+    have their own tests)."""
     mock.set_responder(ScriptedAgent(scale=40))
-    return Limits(call_backoff_s=0.0, cache_canary_runs=0, run_cap_usd=1.0)
+    return Limits(call_backoff_s=0.0, cache_canary_runs=0, run_cap_usd=1.0, min_run_budget_usd=1.0)
 
 
 def test_spend_cap_stops_within_one_run_of_the_limit(tmp_path: Path, mock: Any) -> None:
@@ -200,7 +202,11 @@ def test_parallel_runs_cannot_jointly_pass_the_cap(
     mock.set_responder(agent)
     plan, manifest = build(tmp_path, [HAIKU, ("claude-haiku-5-5", "medium")])
     limits = Limits(
-        call_backoff_s=0.0, cache_canary_runs=0, max_prompt_tokens=20_000, max_output_tokens=1_000
+        call_backoff_s=0.0,
+        cache_canary_runs=0,
+        max_prompt_tokens=20_000,
+        max_output_tokens=1_000,
+        min_run_budget_usd=3.0,  # full bounds only: the reduced budgets have their own tests
     )
     cfg = config_for(mock, limits=limits, paid=3)
     bound = run_bound(plan.specs[0], load_default_catalog(), cfg)
@@ -212,9 +218,10 @@ def test_parallel_runs_cannot_jointly_pass_the_cap(
     held: list[int] = []
     orig = ledger_mod.CapGuard.admit
 
-    def admit(self: Any, provider: str, run_id: str, bound: float) -> None:
-        orig(self, provider, run_id, bound)
+    def admit(self: Any, provider: str, run_id: str, bound: float, **kw: Any) -> float:
+        grant = orig(self, provider, run_id, bound, **kw)
         held.append(len(self._held))
+        return grant
 
     monkeypatch.setattr(ledger_mod.CapGuard, "admit", admit)
     runner(plan, manifest, cfg, out, environ=environ_with("anthropic")).run(execute=True)

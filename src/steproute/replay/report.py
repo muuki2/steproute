@@ -21,7 +21,7 @@ from typing import Any
 
 from steproute.core.catalog import Catalog
 from steproute.replay.config import DEFAULT_CAPS
-from steproute.replay.journal import LABELLED, Journal
+from steproute.replay.journal import DEFERRED, LABELLED, Journal
 from steproute.replay.ledger import Ledger
 from steproute.replay.plan import ReplayPlan
 from steproute.tasks.estimate import months_needed
@@ -39,6 +39,8 @@ class ConfigStats:
     labelled: int = 0
     passed: int = 0
     cost: float = 0.0
+    #: The same usage at the catalog's peak (list) price; ``cost`` is what was billed.
+    list_cost: float = 0.0
     steps: int = 0
     input_tokens: int = 0
     cache_read: int = 0
@@ -64,9 +66,10 @@ class ConfigStats:
 
     @property
     def ratio(self) -> float | None:
+        """Realised over estimated, both at list price (the estimate is at peak prices)."""
         if not self.runs or self.est_central <= 0:
             return None
-        return (self.cost / self.runs) / self.est_central
+        return (self.list_cost / self.runs) / self.est_central
 
 
 def measure(
@@ -77,8 +80,8 @@ def measure(
     out: dict[tuple[str, str], ConfigStats] = {}
     for attempts in journal.by_cell().values():
         last = attempts[-1]
-        if last.end is None:
-            continue
+        if last.end is None or last.status in DEFERRED:
+            continue  # pending: stopped for budget or balance, run again on resume
         end = last.end
         _, model, effort, _ = last.cell
         prov = catalog.get(model).provider if model in catalog else "?"
@@ -90,6 +93,7 @@ def measure(
         st.statuses[status] = st.statuses.get(status, 0) + 1
         st.runs += 1
         st.cost += float(end.get("cost_usd") or 0.0)
+        st.list_cost += float(end.get("list_cost_usd", end.get("cost_usd")) or 0.0)
         st.steps += int(end.get("steps") or 0)
         u = end.get("usage") or {}
         st.input_tokens += int(u.get("input", 0))
@@ -144,13 +148,17 @@ def pilot_report(
         f"Output directory: `{out.name}`. Plan: `{ident.get('plan', '?')}`, manifest "
         f"`{ident.get('manifest', manifest.name)}`. Only the last attempt of each finished cell "
         "counts; costs are realised provider cost from the ledger (usage priced with the catalog; "
-        "a call without usage is charged its worst case and counted in *missing usage*).",
+        "a call without usage is charged its worst case and counted in *missing usage*). "
+        "*$ billed* is what was charged, off-peak calls at off-peak prices; *$ at list price* "
+        "is the same usage at the catalog's peak (list) price, the number to compare across "
+        "providers and with the estimates.",
         "",
         "## Per configuration",
         "",
-        "| Model | Effort | Runs | Success (labelled) | Unlabelled | $/run | $ total | Est. $/run "
-        "| Realised / est. | Steps/run | Cache-read share | Missing usage |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Model | Effort | Runs | Success (labelled) | Unlabelled | $/run billed | $ total billed "
+        "| $ total at list price | Est. $/run (list) | Realised / est. (list) | Steps/run "
+        "| Cache-read share | Missing usage |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for (model, effort), st in sorted(
         stats.items(), key=lambda kv: (kv[1].provider != "ollama", kv[1].provider, kv[0])
@@ -159,7 +167,8 @@ def pilot_report(
         lines.append(
             f"| {model} | {effort} | {st.runs} "
             f"| {_pct(st.success_rate)} ({st.passed}/{st.labelled}) "
-            f"| {unl} | {_usd(st.mean_cost, 4)} | {_usd(st.cost, 2)} | {_usd(st.est_central, 4)} "
+            f"| {unl} | {_usd(st.mean_cost, 4)} | {_usd(st.cost, 2)} | {_usd(st.list_cost, 2)} "
+            f"| {_usd(st.est_central, 4)} "
             f"| {'n/a' if st.ratio is None else f'{st.ratio:.2f}'} "
             f"| {st.steps / st.runs if st.runs else 0:.1f} | {_pct(st.cache_share)} "
             f"| {st.missing_usage} |"
@@ -175,6 +184,28 @@ def pilot_report(
         lines.append(f"| {prov} | {month} | {_usd(usd, 2)} |")
     if ledger.open_intents():
         lines.append(f"\n{len(ledger.open_intents())} unsettled call(s) are charged at worst case.")
+    periods = ledger.by_period()
+    if any(k[1] in ("peak", "offpeak") for k in periods):
+        lines += [
+            "",
+            "## Spend by time of day (ledger)",
+            "",
+            "| Provider | Period | $ billed | $ at list price |",
+            "|---|---|---|---|",
+        ]
+        for (prov, period), (billed, listed) in sorted(periods.items()):
+            lines.append(f"| {prov} | {period} | {_usd(billed, 2)} | {_usd(listed, 2)} |")
+    pending: dict[str, int] = {}
+    for attempts in journal.by_cell().values():
+        if attempts[-1].status in DEFERRED:
+            pending[str(attempts[-1].status)] = pending.get(str(attempts[-1].status), 0) + 1
+    if pending:
+        lines += [
+            "",
+            "Pending cells stopped early (not failures, not counted above; a resume runs them): "
+            + ", ".join(f"{k} {v}" for k, v in sorted(pending.items()))
+            + ".",
+        ]
     status_tot: dict[str, int] = {}
     for st in stats.values():
         for k, v in st.statuses.items():
@@ -209,10 +240,10 @@ def pilot_report(
     for st in stats.values():
         if st.ratio is not None and st.provider not in ("ollama",):
             model_ratio.setdefault(st.model, [0.0, 0.0])
-            model_ratio[st.model][0] += st.cost
+            model_ratio[st.model][0] += st.list_cost
             model_ratio[st.model][1] += st.est_central * st.runs
             prov_ratio.setdefault(st.provider, [0.0, 0.0])
-            prov_ratio[st.provider][0] += st.cost
+            prov_ratio[st.provider][0] += st.list_cost
             prov_ratio[st.provider][1] += st.est_central * st.runs
     doc_est: dict[str, float] = {}
     new_est: dict[str, float] = {}
@@ -228,8 +259,8 @@ def pilot_report(
         src = sources.setdefault(
             s.provider, {"measured": 0, "model ratio": 0, "provider ratio": 0, "unmeasured": 0}
         )
-        if cs is not None and cs.mean_cost is not None and cs.runs:
-            new_est[s.provider] = new_est.get(s.provider, 0.0) + cs.mean_cost
+        if cs is not None and cs.runs:
+            new_est[s.provider] = new_est.get(s.provider, 0.0) + cs.list_cost / cs.runs
             src["measured"] += 1
         elif s.model in model_ratio and model_ratio[s.model][1] > 0:
             r = model_ratio[s.model][0] / model_ratio[s.model][1]
@@ -246,7 +277,8 @@ def pilot_report(
         "",
         "## Sparse grid (option B), re-estimated from the pilot",
         "",
-        "Runs priced at their measured $/run where the pilot ran that configuration, otherwise "
+        "Runs priced at their measured $/run at list (peak) price where the pilot ran that "
+        "configuration, otherwise "
         "the task-set estimate times the measured ratio of the same model (or provider). "
         "Months at the per-provider monthly cap.",
         "",

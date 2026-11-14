@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Any
 
 from steproute.core.catalog import Catalog
-from steproute.core.schema import effort_rank
+from steproute.core.offpeak import offpeak_profile
+from steproute.core.schema import ModelProfile, effort_rank
 from steproute.tasks.estimate import Assumptions, build_plans, estimate_run
 from steproute.tasks.manifest import Task, TaskManifest
 
@@ -75,8 +76,12 @@ class RunSpec:
     holdout: bool
     repeat: int = 0
     stage: int = 1
-    #: Central, low and high estimated cost of one run (``steproute tasks estimate``).
+    #: Central, low and high estimated cost of one run (``steproute tasks estimate``), at the
+    #: catalog (peak, list) price.
     est_usd: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    #: The same at the model's off-peak price; ``None`` for a model priced the same at every
+    #: hour. Off-peak scheduling (``[schedule]``) makes this the price a run is expected to pay.
+    est_offpeak_usd: tuple[float, float, float] | None = None
 
     @property
     def cell(self) -> tuple[str, str, str, int]:
@@ -150,7 +155,23 @@ def _estimate(
 ) -> tuple[float, float, float]:
     if assumptions is None:
         return (0.0, 0.0, 0.0)
-    p = catalog.get(model)
+    return _estimate_profile(catalog.get(model), assumptions, effort)
+
+
+def _estimate_offpeak(
+    catalog: Catalog, assumptions: Assumptions | None, model: str, effort: str
+) -> tuple[float, float, float] | None:
+    off = offpeak_profile(catalog.get(model))
+    if off is None:
+        return None
+    if assumptions is None:
+        return (0.0, 0.0, 0.0)
+    return _estimate_profile(off, assumptions, effort)
+
+
+def _estimate_profile(
+    p: ModelProfile, assumptions: Assumptions, effort: str
+) -> tuple[float, float, float]:
     return (
         estimate_run(p, effort, assumptions, "central").usd,
         estimate_run(p, effort, assumptions, "low").usd,
@@ -175,11 +196,12 @@ def _specs(
         if effort not in p.efforts:
             raise PlanError(f"{model} has no effort {effort!r} (it has {list(p.efforts)})")
         est = _estimate(catalog, assumptions, model, effort)
+        off = _estimate_offpeak(catalog, assumptions, model, effort)
         stage = (stage_of or {}).get((model, effort), 1)
         for t in tasks:
             for r in range(repeats):
                 out.append(
-                    RunSpec(t.id, model, effort, p.provider, p.local, p.holdout, r, stage, est)
+                    RunSpec(t.id, model, effort, p.provider, p.local, p.holdout, r, stage, est, off)
                 )
     return out
 

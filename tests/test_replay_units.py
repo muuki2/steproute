@@ -199,7 +199,12 @@ def test_output_lock_is_exclusive(tmp_path: Path) -> None:
 
 def test_config_defaults_are_the_safe_ones() -> None:
     cfg = load_replay_config(None)
-    assert dict(cfg.caps) == dict(DEFAULT_CAPS) == {"anthropic": 80.0, "deepseek": 20.0}
+    assert dict(cfg.caps) == dict(DEFAULT_CAPS) == {"anthropic": 80.0, "deepseek": 10.0}
+    assert dict(cfg.totals) == {"deepseek": 10.0}  # $10 in total, not a month (issue 57)
+    assert cfg.total("anthropic") is None and cfg.total("ollama") is None
+    assert cfg.schedule("deepseek").offpeak_only and not cfg.schedule("anthropic").offpeak_only
+    assert cfg.start_margin("deepseek") == cfg.limits.run_timeout_s == 7200
+    assert cfg.limits.min_run_budget_usd == 0.5
     assert cfg.limits.run_cap_usd == 3.0
     assert cfg.provider("anthropic").api_key_env == "ANTHROPIC_API_KEY"
     assert cfg.cap("ollama") is None

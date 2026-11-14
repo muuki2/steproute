@@ -57,17 +57,28 @@ def add_replay(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     common(p)
     p.set_defaults(func=_plan)
 
+    def env_file(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--env-file",
+            type=Path,
+            help="NAME=value lines (optional `export`, quotes, # comments) loaded into this "
+            "process's environment; a variable already set wins. Values are never shown.",
+        )
+
     p = rsub.add_parser("preflight", help="Check what a real run needs; changes nothing.")
     common(p)
+    env_file(p)
     p.set_defaults(func=_preflight)
 
     p = rsub.add_parser("run", help="Dry run by default; --execute runs it for real.")
     common(p)
+    env_file(p)
     p.add_argument("--execute", action="store_true", help="really run (this spends money)")
     p.set_defaults(func=_run)
 
     p = rsub.add_parser("resume", help="Continue the plan recorded in --out (dry run by default).")
     common(p, plan=False)
+    env_file(p)
     p.add_argument("--execute", action="store_true", help="really run (this spends money)")
     p.set_defaults(func=_resume)
 
@@ -115,22 +126,47 @@ def _inputs(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _runner(args: argparse.Namespace) -> Any:
-    from steproute.replay.runner import Runner
+def _env(args: argparse.Namespace) -> list[str]:
+    """Load ``--env-file`` into ``os.environ``; the values to redact (every value in the file
+    and the value in force for each of its names)."""
+    import os
 
+    from steproute.replay.envfile import apply_env, load_env_file
+
+    path = getattr(args, "env_file", None)
+    if path is None:
+        return []
+    values = load_env_file(path)
+    apply_env(values, os.environ)
+    return [*values.values(), *(os.environ.get(n, "") for n in values)]
+
+
+def _runner(args: argparse.Namespace) -> Any:
+    from steproute.replay.runner import Runner, RunnerDeps
+
+    secrets = _env(args)
     config, catalog, manifest = _load(args)
     plan = _build_plan(args.plan, manifest, catalog, args.assumptions)
     return Runner(
-        plan, config=config, catalog=catalog, manifest=manifest, out=args.out, inputs=_inputs(args)
+        plan,
+        config=config,
+        catalog=catalog,
+        manifest=manifest,
+        out=args.out,
+        inputs=_inputs(args),
+        deps=RunnerDeps(secrets=secrets),
     )
 
 
 def _guard(fn: Any, args: argparse.Namespace) -> int:
+    from steproute.replay.envfile import EnvFileError
     from steproute.replay.journal import LockHeld
     from steproute.replay.runner import MissingKey
 
     try:
         return int(fn(args))
+    except EnvFileError as exc:
+        return _err(str(exc))  # never carries a value
     except (ReplayConfigError, PlanError, ManifestError, OSError, ValueError) as exc:
         return _err(str(exc))
     except MissingKey:
@@ -175,6 +211,7 @@ def _preflight(args: argparse.Namespace) -> int:
     from steproute.replay.preflight import preflight
 
     def go(a: argparse.Namespace) -> int:
+        _env(a)
         config, catalog, manifest = _load(a)
         plan = _build_plan(a.plan, manifest, catalog, a.assumptions)
         checks = preflight(plan, manifest, config, environ=os.environ, out=a.out)
