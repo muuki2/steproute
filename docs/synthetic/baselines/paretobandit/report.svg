@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="viz" viewBox="0 0 820 752" width="820" height="752" role="img" aria-label="SYNTHETIC DATA. NOT A RESULT.">
+<title>SYNTHETIC DATA. NOT A RESULT.</title><style>
+.viz{color-scheme:light;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;
+--grid:#e6e5e0;--cfg:#6b6a65;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#52514e}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .viz{
+color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#8f8e86;
+--grid:#33332f;--cfg:#a6a59c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c3c2b7}}
+:root[data-theme="dark"] .viz{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;
+--ink2:#c3c2b7;--muted:#8f8e86;--grid:#33332f;--cfg:#a6a59c;--s1:#3987e5;--s2:#d95926;
+--s3:#199e70;--s4:#c3c2b7}
+.viz text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
+.bg{fill:var(--surface)} .title{font-size:17px;font-weight:600}
+.sub{font-size:12px;fill:var(--ink2)} .tick{font-size:11px;fill:var(--ink2)}
+.axis-label{font-size:12px;fill:var(--ink2)} .grid{stroke:var(--grid);stroke-width:1}
+.axis{stroke:var(--muted);stroke-width:1} .cfg{fill:var(--cfg);stroke:var(--surface);stroke-width:2}
+.cfg-label{font-size:10.5px;fill:var(--ink2)} .frontier{fill:none;stroke:var(--ink2);
+stroke-width:2;stroke-dasharray:6 4} .pol-label{font-size:12px;font-weight:600}
+.legend{font-size:12px} .legend-note{font-size:11px;fill:var(--ink2)}
+.whisker{stroke-width:1.5}
+</style>
+<rect class="bg" width="820" height="752"/>
+<text class="title" x="76" y="28">SYNTHETIC DATA. NOT A RESULT.</text>
+<text class="sub" x="76" y="46">grid.jsonl · grid data, task level</text>
+<line class="grid" x1="76" x2="796" y1="410.0" y2="410.0"/>
+<text class="tick" x="68" y="414.0" text-anchor="end">0%</text>
+<line class="grid" x1="76" x2="796" y1="340.8" y2="340.8"/>
+<text class="tick" x="68" y="344.8" text-anchor="end">20%</text>
+<line class="grid" x1="76" x2="796" y1="271.6" y2="271.6"/>
+<text class="tick" x="68" y="275.6" text-anchor="end">40%</text>
+<line class="grid" x1="76" x2="796" y1="202.4" y2="202.4"/>
+<text class="tick" x="68" y="206.4" text-anchor="end">60%</text>
+<line class="grid" x1="76" x2="796" y1="133.2" y2="133.2"/>
+<text class="tick" x="68" y="137.2" text-anchor="end">80%</text>
+<line class="grid" x1="76" x2="796" y1="64.0" y2="64.0"/>
+<text class="tick" x="68" y="68.0" text-anchor="end">100%</text>
+<line class="grid" x1="76.0" x2="76.0" y1="64" y2="410"/>
+<text class="tick" x="76.0" y="428" text-anchor="middle">$0</text>
+<line class="grid" x1="196.0" x2="196.0" y1="64" y2="410"/>
+<text class="tick" x="196.0" y="428" text-anchor="middle">$0.5</text>
+<line class="grid" x1="316.0" x2="316.0" y1="64" y2="410"/>
+<text class="tick" x="316.0" y="428" text-anchor="middle">$1.00</text>
+<line class="grid" x1="436.0" x2="436.0" y1="64" y2="410"/>
+<text class="tick" x="436.0" y="428" text-anchor="middle">$1.50</text>
+<line class="grid" x1="556.0" x2="556.0" y1="64" y2="410"/>
+<text class="tick" x="556.0" y="428" text-anchor="middle">$2.00</text>
+<line class="grid" x1="676.0" x2="676.0" y1="64" y2="410"/>
+<text class="tick" x="676.0" y="428" text-anchor="middle">$2.50</text>
+<line class="grid" x1="796.0" x2="796.0" y1="64" y2="410"/>
+<text class="tick" x="796.0" y="428" text-anchor="middle">$3.00</text>
+<line class="axis" x1="76" x2="796" y1="410" y2="410"/>
+<line class="axis" x1="76" x2="76" y1="64" y2="410"/>
+<text class="axis-label" x="436.0" y="448" text-anchor="middle">Spend: mean cost per task (USD)</text>
+<text class="axis-label" transform="translate(24,237.0) rotate(-90)" text-anchor="middle">Score: success rate</text>
+<path class="frontier" d="M76.0,247.9L100.9,187.8L160.5,158.7L400.2,136.8L604.7,120.5L796.0,120.5"><title>Single-configuration frontier: best success reachable at each spend by single configurations or random mixes of them</title></path>
+<circle class="cfg" cx="604.7" cy="120.5" r="5"><title>cloud-big (high): 83.7% at $2.20 per task</title></circle>
+<text class="cfg-label" x="613.7" y="113.5">cloud-big (high)</text>
+<circle class="cfg" cx="400.2" cy="136.8" r="5"><title>cloud-big (medium): 78.9% at $1.35 per task</title></circle>
+<text class="cfg-label" x="409.2" y="129.8">cloud-big (medium)</text>
+<circle class="cfg" cx="160.5" cy="158.7" r="5"><title>cloud-mid (medium): 72.6% at $0.352 per task</title></circle>
+<text class="cfg-label" x="169.5" y="172.2">cloud-mid (medium)</text>
+<circle class="cfg" cx="100.9" cy="187.8" r="5"><title>cloud-small (high): 64.2% at $0.104 per task</title></circle>
+<text class="cfg-label" x="109.9" y="201.3">cloud-small (high)</text>
+<circle class="cfg" cx="87.0" cy="227.9" r="5"><title>cloud-small (low): 52.6% at $0.0456 per task</title></circle>
+<text class="cfg-label" x="96.0" y="241.4">cloud-small (low)</text>
+<circle class="cfg" cx="76.0" cy="247.9" r="5"><title>local-small (medium): 46.8% at $0 per task</title></circle>
+<text class="cfg-label" x="85.0" y="261.4">local-small (medium)</text>
+<line class="whisker" stroke="var(--s1)" x1="551.1" x2="551.1" y1="147.8" y2="109.5"/>
+<line class="whisker" stroke="var(--s1)" x1="493.4" x2="617.9" y1="127.7" y2="127.7"/>
+<path d="M551.1087020597206,120.73684210526316L558.1087020597206,127.73684210526316L551.1087020597206,134.73684210526318L544.1087020597206,127.73684210526316Z" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>paretobandit full lambda_c=0: 81.6% at $1.98 per task; verdict not_shown</title></path>
+<text class="pol-label" x="560.1" y="142.7">paretobandit full lambda_c=0</text>
+<line class="whisker" stroke="var(--s2)" x1="551.1" x2="551.1" y1="147.8" y2="109.5"/>
+<line class="whisker" stroke="var(--s2)" x1="493.4" x2="617.9" y1="127.7" y2="127.7"/>
+<path d="M551.1087020597206,120.73684210526316L557.7587020597206,132.63684210526316L544.4587020597206,132.63684210526316Z" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"><title>paretobandit full lambda_c=0.1: 81.6% at $1.98 per task; verdict not_shown</title></path>
+<text class="pol-label" x="560.1" y="142.7">paretobandit full lambda_c=0.1</text>
+<line class="whisker" stroke="var(--s3)" x1="431.4" x2="431.4" y1="175.1" y2="131.4"/>
+<line class="whisker" stroke="var(--s3)" x1="369.9" x2="506.9" y1="151.4" y2="151.4"/>
+<path d="M425.75190689686093,145.81052631578947H436.951906896861V157.01052631578946H425.75190689686093Z" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"><title>paretobandit full lambda_c=0.3: 74.7% at $1.48 per task; verdict not_shown</title></path>
+<text class="pol-label" x="440.4" y="166.4">paretobandit full lambda_c=0.3</text>
+<line class="whisker" stroke="var(--s4)" x1="105.2" x2="105.2" y1="207.9" y2="162.3"/>
+<line class="whisker" stroke="var(--s4)" x1="99.1" x2="112.6" y1="184.2" y2="184.2"/>
+<path d="M105.16,177.19L107.01,181.64L111.82,182.03L108.15,185.16L109.27,189.85L105.16,187.34L101.04,189.85L102.16,185.16L98.50,182.03L103.31,181.64Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit full lambda_c=0.5: 65.3% at $0.121 per task; verdict not_shown</title></path>
+<text class="pol-label" x="114.2" y="199.2">paretobandit full lambda_c=0.5</text>
+<line class="whisker" stroke="var(--s4)" x1="89.5" x2="89.5" y1="224.3" y2="176.9"/>
+<line class="whisker" stroke="var(--s4)" x1="87.8" x2="91.1" y1="200.6" y2="200.6"/>
+<path d="M89.45743926094036,207.57894736842104L96.10743926094037,195.67894736842103L82.80743926094036,195.67894736842103Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit full lambda_c=1: 60.5% at $0.0561 per task; verdict not_shown</title></path>
+<text class="pol-label" x="98.5" y="215.6">paretobandit full lambda_c=1</text>
+<line class="whisker" stroke="var(--s4)" x1="604.7" x2="604.7" y1="142.3" y2="104.1"/>
+<line class="whisker" stroke="var(--s4)" x1="543.5" x2="668.5" y1="120.5" y2="120.5"/>
+<path d="M602.2539215213991,113.45263157894735H607.1539215213992V118.00263157894734H611.7039215213991V122.90263157894735H607.1539215213992V127.45263157894735H602.2539215213991V122.90263157894735H597.7039215213991V118.00263157894734H602.2539215213991Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit online lambda_c=0: 83.7% at $2.20 per task; verdict does_not_beat</title></path>
+<text class="pol-label" x="595.7" y="113.5" text-anchor="end">paretobandit online lambda_c=0</text>
+<line class="whisker" stroke="var(--s4)" x1="91.8" x2="91.8" y1="213.3" y2="167.8"/>
+<line class="whisker" stroke="var(--s4)" x1="89.7" x2="94.4" y1="189.7" y2="189.7"/>
+<path d="M91.81375221492226,182.65263157894736L98.81375221492226,189.65263157894736L91.81375221492226,196.65263157894736L84.81375221492226,189.65263157894736Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit online lambda_c=0.1: 63.7% at $0.0659 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="100.8" y="204.7">paretobandit online lambda_c=0.1</text>
+<line class="whisker" stroke="var(--s4)" x1="80.9" x2="80.9" y1="257.0" y2="209.7"/>
+<line class="whisker" stroke="var(--s4)" x1="80.1" x2="81.9" y1="233.4" y2="233.4"/>
+<path d="M80.92092984360772,226.3578947368421L87.57092984360773,238.2578947368421L74.27092984360772,238.2578947368421Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit online lambda_c=0.3: 51.1% at $0.0205 per task; verdict not_shown</title></path>
+<text class="pol-label" x="89.9" y="248.4">paretobandit online lambda_c=0.3</text>
+<line class="whisker" stroke="var(--s4)" x1="80.9" x2="80.9" y1="257.0" y2="209.7"/>
+<line class="whisker" stroke="var(--s4)" x1="80.1" x2="81.9" y1="233.4" y2="233.4"/>
+<path d="M75.32092984360773,227.7578947368421H86.52092984360772V238.9578947368421H75.32092984360773Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit online lambda_c=0.5: 51.1% at $0.0205 per task; verdict not_shown</title></path>
+<text class="pol-label" x="89.9" y="248.4">paretobandit online lambda_c=0.5</text>
+<line class="whisker" stroke="var(--s4)" x1="80.9" x2="80.9" y1="257.0" y2="209.7"/>
+<line class="whisker" stroke="var(--s4)" x1="80.1" x2="81.9" y1="233.4" y2="233.4"/>
+<path d="M80.92,226.36L82.77,230.81L87.58,231.19L83.92,234.33L85.04,239.02L80.92,236.51L76.81,239.02L77.93,234.33L74.26,231.19L79.07,230.81Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>paretobandit online lambda_c=1: 51.1% at $0.0205 per task; verdict not_shown</title></path>
+<text class="pol-label" x="89.9" y="248.4">paretobandit online lambda_c=1</text>
+<line class="whisker" stroke="var(--s4)" x1="329.6" x2="329.6" y1="129.6" y2="96.8"/>
+<line class="whisker" stroke="var(--s4)" x1="277.9" x2="387.8" y1="111.3" y2="111.3"/>
+<path d="M329.6255284712744,118.34736842105262L336.27552847127436,106.44736842105262L322.9755284712744,106.44736842105262Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>rules: 86.3% at $1.06 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="338.6" y="126.3">rules</text>
+<line class="whisker" stroke="var(--s4)" x1="193.0" x2="193.0" y1="98.6" y2="74.9"/>
+<line class="whisker" stroke="var(--s4)" x1="151.9" x2="248.5" y1="84.0" y2="84.0"/>
+<path d="M190.52282758019385,77.0315789473684H195.42282758019383V81.5815789473684H199.97282758019384V86.4815789473684H195.42282758019383V91.0315789473684H190.52282758019385V86.4815789473684H185.97282758019384V81.5815789473684H190.52282758019385Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>oracle: 94.2% at $0.487 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="202.0" y="99.0">oracle</text>
+<circle class="cfg" cx="83" cy="468" r="5"/>
+<text class="legend" x="96" y="472">single configuration</text>
+<path class="frontier" d="M276,468H308"/>
+<text class="legend" x="316" y="472">frontier: envelope of single configurations and the origin</text>
+<path d="M83,482L89,488L83,494L77,488Z" fill="var(--s1)"/>
+<text class="legend" x="96" y="492">paretobandit full lambda_c=0: not shown</text>
+<path d="M83,502L88.7,512.2L77.3,512.2Z" fill="var(--s2)"/>
+<text class="legend" x="96" y="512">paretobandit full lambda_c=0.1: not shown</text>
+<path d="M78.2,523.2H87.8V532.8H78.2Z" fill="var(--s3)"/>
+<text class="legend" x="96" y="532">paretobandit full lambda_c=0.3: not shown</text>
+<path d="M83.00,542.00L84.59,545.82L88.71,546.15L85.57,548.83L86.53,552.85L83.00,550.70L79.47,552.85L80.43,548.83L77.29,546.15L81.41,545.82Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="552">paretobandit full lambda_c=0.5: not shown</text>
+<path d="M83,574L88.7,563.8L77.3,563.8Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="572">paretobandit full lambda_c=1: not shown</text>
+<path d="M80.9,582H85.1V585.9H89V590.1H85.1V594H80.9V590.1H77V585.9H80.9Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="592">paretobandit online lambda_c=0: does not beat it</text>
+<path d="M83,602L89,608L83,614L77,608Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="612">paretobandit online lambda_c=0.1: beats the frontier</text>
+<path d="M83,622L88.7,632.2L77.3,632.2Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="632">paretobandit online lambda_c=0.3: not shown</text>
+<path d="M78.2,643.2H87.8V652.8H78.2Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="652">paretobandit online lambda_c=0.5: not shown</text>
+<path d="M83.00,662.00L84.59,665.82L88.71,666.15L85.57,668.83L86.53,672.85L83.00,670.70L79.47,672.85L80.43,668.83L77.29,666.15L81.41,665.82Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="672">paretobandit online lambda_c=1: not shown</text>
+<path d="M83,694L88.7,683.8L77.3,683.8Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="692">rules: beats the frontier</text>
+<path d="M80.9,702H85.1V705.9H89V710.1H85.1V714H80.9V710.1H77V705.9H80.9Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="712">oracle (hindsight reference): beats the frontier</text>
+<text class="legend-note" x="76" y="732">whiskers: confidence intervals of success and spend</text>
+<g class="stamp" aria-label="SYNTHETIC DATA. NOT A RESULT."><text transform="translate(410,376) rotate(-24)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="44" font-weight="800" style="fill:#c62828;fill-opacity:0.22">SYNTHETIC DATA. NOT A RESULT.</text><text x="410" y="744" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" style="fill:#c62828">SYNTHETIC DATA. NOT A RESULT.</text></g></svg>

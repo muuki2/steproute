@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="viz" viewBox="0 0 820 652" width="820" height="652" role="img" aria-label="SYNTHETIC DATA. NOT A RESULT.">
+<title>SYNTHETIC DATA. NOT A RESULT.</title><style>
+.viz{color-scheme:light;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;
+--grid:#e6e5e0;--cfg:#6b6a65;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#52514e}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .viz{
+color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#8f8e86;
+--grid:#33332f;--cfg:#a6a59c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c3c2b7}}
+:root[data-theme="dark"] .viz{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;
+--ink2:#c3c2b7;--muted:#8f8e86;--grid:#33332f;--cfg:#a6a59c;--s1:#3987e5;--s2:#d95926;
+--s3:#199e70;--s4:#c3c2b7}
+.viz text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
+.bg{fill:var(--surface)} .title{font-size:17px;font-weight:600}
+.sub{font-size:12px;fill:var(--ink2)} .tick{font-size:11px;fill:var(--ink2)}
+.axis-label{font-size:12px;fill:var(--ink2)} .grid{stroke:var(--grid);stroke-width:1}
+.axis{stroke:var(--muted);stroke-width:1} .cfg{fill:var(--cfg);stroke:var(--surface);stroke-width:2}
+.cfg-label{font-size:10.5px;fill:var(--ink2)} .frontier{fill:none;stroke:var(--ink2);
+stroke-width:2;stroke-dasharray:6 4} .pol-label{font-size:12px;font-weight:600}
+.legend{font-size:12px} .legend-note{font-size:11px;fill:var(--ink2)}
+.whisker{stroke-width:1.5}
+</style>
+<rect class="bg" width="820" height="652"/>
+<text class="title" x="76" y="28">SYNTHETIC DATA. NOT A RESULT.</text>
+<text class="sub" x="76" y="46">grid.jsonl · grid data, task level</text>
+<line class="grid" x1="76" x2="796" y1="410.0" y2="410.0"/>
+<text class="tick" x="68" y="414.0" text-anchor="end">0%</text>
+<line class="grid" x1="76" x2="796" y1="340.8" y2="340.8"/>
+<text class="tick" x="68" y="344.8" text-anchor="end">20%</text>
+<line class="grid" x1="76" x2="796" y1="271.6" y2="271.6"/>
+<text class="tick" x="68" y="275.6" text-anchor="end">40%</text>
+<line class="grid" x1="76" x2="796" y1="202.4" y2="202.4"/>
+<text class="tick" x="68" y="206.4" text-anchor="end">60%</text>
+<line class="grid" x1="76" x2="796" y1="133.2" y2="133.2"/>
+<text class="tick" x="68" y="137.2" text-anchor="end">80%</text>
+<line class="grid" x1="76" x2="796" y1="64.0" y2="64.0"/>
+<text class="tick" x="68" y="68.0" text-anchor="end">100%</text>
+<line class="grid" x1="76.0" x2="76.0" y1="64" y2="410"/>
+<text class="tick" x="76.0" y="428" text-anchor="middle">$0</text>
+<line class="grid" x1="220.0" x2="220.0" y1="64" y2="410"/>
+<text class="tick" x="220.0" y="428" text-anchor="middle">$0.5</text>
+<line class="grid" x1="364.0" x2="364.0" y1="64" y2="410"/>
+<text class="tick" x="364.0" y="428" text-anchor="middle">$1.00</text>
+<line class="grid" x1="508.0" x2="508.0" y1="64" y2="410"/>
+<text class="tick" x="508.0" y="428" text-anchor="middle">$1.50</text>
+<line class="grid" x1="652.0" x2="652.0" y1="64" y2="410"/>
+<text class="tick" x="652.0" y="428" text-anchor="middle">$2.00</text>
+<line class="grid" x1="796.0" x2="796.0" y1="64" y2="410"/>
+<text class="tick" x="796.0" y="428" text-anchor="middle">$2.50</text>
+<line class="axis" x1="76" x2="796" y1="410" y2="410"/>
+<line class="axis" x1="76" x2="76" y1="64" y2="410"/>
+<text class="axis-label" x="436.0" y="448" text-anchor="middle">Spend: mean cost per task (USD)</text>
+<text class="axis-label" transform="translate(24,237.0) rotate(-90)" text-anchor="middle">Score: success rate</text>
+<path class="frontier" d="M76.0,247.9L105.9,187.8L177.3,158.7L465.0,136.8L710.4,120.5L796.0,120.5"><title>Single-configuration frontier: best success reachable at each spend by single configurations or random mixes of them</title></path>
+<circle class="cfg" cx="710.4" cy="120.5" r="5"><title>cloud-big (high): 83.7% at $2.20 per task</title></circle>
+<text class="cfg-label" x="701.4" y="134.0" text-anchor="end">cloud-big (high)</text>
+<circle class="cfg" cx="465.0" cy="136.8" r="5"><title>cloud-big (medium): 78.9% at $1.35 per task</title></circle>
+<text class="cfg-label" x="474.0" y="150.3">cloud-big (medium)</text>
+<circle class="cfg" cx="177.3" cy="158.7" r="5"><title>cloud-mid (medium): 72.6% at $0.352 per task</title></circle>
+<text class="cfg-label" x="186.3" y="172.2">cloud-mid (medium)</text>
+<circle class="cfg" cx="105.9" cy="187.8" r="5"><title>cloud-small (high): 64.2% at $0.104 per task</title></circle>
+<text class="cfg-label" x="114.9" y="201.3">cloud-small (high)</text>
+<circle class="cfg" cx="89.1" cy="227.9" r="5"><title>cloud-small (low): 52.6% at $0.0456 per task</title></circle>
+<text class="cfg-label" x="98.1" y="241.4">cloud-small (low)</text>
+<circle class="cfg" cx="76.0" cy="247.9" r="5"><title>local-small (medium): 46.8% at $0 per task</title></circle>
+<text class="cfg-label" x="85.0" y="261.4">local-small (medium)</text>
+<line class="whisker" stroke="var(--s1)" x1="221.5" x2="221.5" y1="217.0" y2="169.6"/>
+<line class="whisker" stroke="var(--s1)" x1="183.1" x2="269.1" y1="191.5" y2="191.5"/>
+<path d="M221.47949183742745,184.47368421052633L228.47949183742745,191.47368421052633L221.47949183742745,198.47368421052633L214.47949183742745,191.47368421052633Z" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>graphrouter beta=0: 63.2% at $0.505 per task; verdict does_not_beat</title></path>
+<text class="pol-label" x="230.5" y="206.5">graphrouter beta=0</text>
+<line class="whisker" stroke="var(--s2)" x1="365.5" x2="365.5" y1="191.5" y2="145.9"/>
+<line class="whisker" stroke="var(--s2)" x1="321.6" x2="414.8" y1="166.0" y2="166.0"/>
+<path d="M365.5301723315335,158.97894736842107L372.18017233153347,170.87894736842108L358.8801723315335,170.87894736842108Z" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"><title>graphrouter beta=0.2: 70.5% at $1.01 per task; verdict does_not_beat</title></path>
+<text class="pol-label" x="374.5" y="181.0">graphrouter beta=0.2</text>
+<line class="whisker" stroke="var(--s3)" x1="255.2" x2="255.2" y1="198.8" y2="153.2"/>
+<line class="whisker" stroke="var(--s3)" x1="227.6" x2="293.1" y1="175.1" y2="175.1"/>
+<path d="M249.59743588918073,169.4842105263158H260.79743588918075V180.68421052631578H249.59743588918073Z" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"><title>graphrouter beta=0.4: 67.9% at $0.622 per task; verdict does_not_beat</title></path>
+<text class="pol-label" x="264.2" y="190.1">graphrouter beta=0.4</text>
+<line class="whisker" stroke="var(--s4)" x1="356.3" x2="356.3" y1="167.8" y2="125.9"/>
+<line class="whisker" stroke="var(--s4)" x1="290.7" x2="439.5" y1="145.9" y2="145.9"/>
+<path d="M356.27,138.95L358.13,143.40L362.93,143.78L359.27,146.92L360.39,151.61L356.27,149.10L352.16,151.61L353.28,146.92L349.62,143.78L354.42,143.40Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>graphrouter beta=0.6: 76.3% at $0.973 per task; verdict not_shown</title></path>
+<text class="pol-label" x="347.3" y="160.9" text-anchor="end">graphrouter beta=0.6</text>
+<line class="whisker" stroke="var(--s4)" x1="177.3" x2="177.3" y1="180.5" y2="136.8"/>
+<line class="whisker" stroke="var(--s4)" x1="166.4" x2="190.7" y1="158.7" y2="158.7"/>
+<path d="M177.34781563315232,165.69473684210524L183.99781563315233,153.79473684210524L170.69781563315232,153.79473684210524Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>graphrouter beta=0.8: 72.6% at $0.352 per task; verdict does_not_beat</title></path>
+<text class="pol-label" x="186.3" y="173.7">graphrouter beta=0.8</text>
+<line class="whisker" stroke="var(--s4)" x1="380.4" x2="380.4" y1="129.6" y2="96.8"/>
+<line class="whisker" stroke="var(--s4)" x1="318.2" x2="450.1" y1="111.3" y2="111.3"/>
+<path d="M377.9006341655292,104.34736842105262H382.8006341655292V108.89736842105262H387.3506341655292V113.79736842105262H382.8006341655292V118.34736842105262H377.9006341655292V113.79736842105262H373.3506341655292V108.89736842105262H377.9006341655292Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>rules: 86.3% at $1.06 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="389.4" y="126.3">rules</text>
+<line class="whisker" stroke="var(--s4)" x1="216.4" x2="216.4" y1="98.6" y2="74.9"/>
+<line class="whisker" stroke="var(--s4)" x1="167.1" x2="283.0" y1="84.0" y2="84.0"/>
+<path d="M216.3673930962326,77.0315789473684L223.3673930962326,84.0315789473684L216.3673930962326,91.0315789473684L209.3673930962326,84.0315789473684Z" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"><title>oracle: 94.2% at $0.487 per task; verdict beats_frontier</title></path>
+<text class="pol-label" x="225.4" y="99.0">oracle</text>
+<circle class="cfg" cx="83" cy="468" r="5"/>
+<text class="legend" x="96" y="472">single configuration</text>
+<path class="frontier" d="M276,468H308"/>
+<text class="legend" x="316" y="472">frontier: envelope of single configurations and the origin</text>
+<path d="M83,482L89,488L83,494L77,488Z" fill="var(--s1)"/>
+<text class="legend" x="96" y="492">graphrouter beta=0: does not beat it</text>
+<path d="M83,502L88.7,512.2L77.3,512.2Z" fill="var(--s2)"/>
+<text class="legend" x="96" y="512">graphrouter beta=0.2: does not beat it</text>
+<path d="M78.2,523.2H87.8V532.8H78.2Z" fill="var(--s3)"/>
+<text class="legend" x="96" y="532">graphrouter beta=0.4: does not beat it</text>
+<path d="M83.00,542.00L84.59,545.82L88.71,546.15L85.57,548.83L86.53,552.85L83.00,550.70L79.47,552.85L80.43,548.83L77.29,546.15L81.41,545.82Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="552">graphrouter beta=0.6: not shown</text>
+<path d="M83,574L88.7,563.8L77.3,563.8Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="572">graphrouter beta=0.8: does not beat it</text>
+<path d="M80.9,582H85.1V585.9H89V590.1H85.1V594H80.9V590.1H77V585.9H80.9Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="592">rules: beats the frontier</text>
+<path d="M83,602L89,608L83,614L77,608Z" fill="var(--s4)"/>
+<text class="legend" x="96" y="612">oracle (hindsight reference): beats the frontier</text>
+<text class="legend-note" x="76" y="632">whiskers: confidence intervals of success and spend</text>
+<g class="stamp" aria-label="SYNTHETIC DATA. NOT A RESULT."><text transform="translate(410,326) rotate(-24)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="44" font-weight="800" style="fill:#c62828;fill-opacity:0.22">SYNTHETIC DATA. NOT A RESULT.</text><text x="410" y="644" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" style="fill:#c62828">SYNTHETIC DATA. NOT A RESULT.</text></g></svg>

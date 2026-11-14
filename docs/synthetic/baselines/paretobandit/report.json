@@ -1,0 +1,2092 @@
+{
+  "format": "steproute-eval-report",
+  "metrics_version": "1",
+  "steproute_version": "0.0.1",
+  "generated_at": 1794660974.822517,
+  "command": [
+    "python",
+    "-m",
+    "steproute.baselines",
+    "paretobandit",
+    "..."
+  ],
+  "settings": {
+    "confidence": 0.95,
+    "bootstrap_replicates": 2000,
+    "seed": 0,
+    "min_ess": 50.0,
+    "min_clusters": 100,
+    "clip": null,
+    "headline_estimator": "dr",
+    "crossfit_folds": 5,
+    "support_tolerance": 0.001,
+    "cost_weight": null,
+    "min_margin": 0.0
+  },
+  "definitions": {
+    "unit": "A task on the grid; a logged step for off-policy estimates.",
+    "success_rate": "Mean success over units. Unlabelled outcomes are excluded from the headline and bounded in the 'unlabelled_sensitivity' diagnostic; they are never failures.",
+    "cost_per_task": "Mean realized cost in USD per task, failures included.",
+    "cost_per_step": "Mean realized cost in USD per logged step, failures included.",
+    "cost_per_solved": "Total spend divided by units solved (mean cost / success rate), so failed attempts are paid for. Null when nothing is solved; an unbounded interval is flagged.",
+    "quality_retention": "Success rate divided by that of the strongest single configuration (highest success, then cheapest) on the same units. Not capped: above 1 means the policy solves more than the strongest configuration.",
+    "strongest_solved_retained": "Grid only: of the tasks the strongest configuration solves, the share the policy also solves (at most 1).",
+    "switches_per_task": "Grid: expected model changes between cascade attempts within a task (0 for a single configuration).",
+    "config_changes_per_task": "Grid: expected (model, effort) changes between attempts.",
+    "switch_rate_per_step": "Logged: probability that the policy's first step uses a model other than the state's cache owner, averaged over logged states.",
+    "added_latency_p50_ms": "Grid: median over tasks of the latency of cascade attempts before the one that produced the result (routing-decision time is not in the data). Null on logged data.",
+    "added_latency_p95_ms": "As added_latency_p50_ms, the 95th percentile (lower quantile).",
+    "total_latency_p50_ms": "Grid: median end-to-end latency of the policy's runs per task.",
+    "total_latency_p95_ms": "Grid: 95th percentile end-to-end latency per task.",
+    "frontier_margin": "Success rate minus the frontier's success rate at the policy's spend, in success-rate units. The frontier is the upper concave envelope of every single configuration's (spend, success) point and the origin.",
+    "cost_saving_at_equal_success": "Grid: the frontier's least spend reaching the policy's success rate, minus the policy's spend (USD per task). Null and flagged when no configuration reaches it.",
+    "utility": "success_rate - cost_weight * cost, only when a cost weight is given.",
+    "verdict": "beats_frontier when the margin's interval lies above 0; does_not_beat when it lies at or below 0 (a tie does not beat); not_shown otherwise, or when the data cannot support a verdict (reasons listed).",
+    "interval": "Percentile cluster bootstrap at the stated confidence: whole tasks (or sessions without a task id) are resampled, paired across policies and configurations.",
+    "ess": "Kish effective sample size of the importance weights, (sum w)^2 / sum w^2."
+  },
+  "verdicts": [
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit full lambda_c=0",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0 beats every single configuration; at $1.98 per task it succeeds on 81.6% of tasks, where the best any single configuration or random mix of them reaches at that spend is 82.4% (margin -0.9 points, 95% interval [-3.7, +2.1] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit full lambda_c=0.1",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.1 beats every single configuration; at $1.98 per task it succeeds on 81.6% of tasks, where the best any single configuration or random mix of them reaches at that spend is 82.4% (margin -0.9 points, 95% interval [-3.7, +2.1] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit full lambda_c=0.3",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.3 beats every single configuration; at $1.481 per task it succeeds on 74.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.7% (margin -4.9 points, 95% interval [-9.5, +0.3] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit full lambda_c=0.5",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.5 beats every single configuration; at $0.1215 per task it succeeds on 65.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 64.8% (margin +0.5 points, 95% interval [-5.4, +5.7] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit full lambda_c=1",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=1 beats every single configuration; at $0.05607 per task it succeeds on 60.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 56.2% (margin +4.3 points, 95% interval [-0.8, +8.6] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit online lambda_c=0",
+      "hindsight": false,
+      "status": "does_not_beat",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. paretobandit online lambda_c=0 does not beat every single configuration: at $2.203 per task it succeeds on 83.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 83.7% (margin +0.0 points, 95% interval [-2.1, +0.0] points). cloud-big (high) alone costs $2.203 per task and succeeds on 83.7%."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit online lambda_c=0.1",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. paretobandit online lambda_c=0.1 beats every single configuration: at $0.06589 per task it succeeds on 63.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 57.9% (margin +5.8 points, 95% interval [+2.7, +9.6] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit online lambda_c=0.3",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=0.3 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit online lambda_c=0.5",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=0.5 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "paretobandit online lambda_c=1",
+      "hindsight": false,
+      "status": "not_shown",
+      "beats_every_single_configuration": false,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=1 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "rules",
+      "hindsight": false,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points)."
+    },
+    {
+      "data": "grid.jsonl",
+      "kind": "grid",
+      "level": "task",
+      "policy": "oracle",
+      "hindsight": true,
+      "status": "beats_frontier",
+      "beats_every_single_configuration": true,
+      "sentence": "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+    }
+  ],
+  "summary": [
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0 beats every single configuration; at $1.98 per task it succeeds on 81.6% of tasks, where the best any single configuration or random mix of them reaches at that spend is 82.4% (margin -0.9 points, 95% interval [-3.7, +2.1] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.1 beats every single configuration; at $1.98 per task it succeeds on 81.6% of tasks, where the best any single configuration or random mix of them reaches at that spend is 82.4% (margin -0.9 points, 95% interval [-3.7, +2.1] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.3 beats every single configuration; at $1.481 per task it succeeds on 74.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.7% (margin -4.9 points, 95% interval [-9.5, +0.3] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.5 beats every single configuration; at $0.1215 per task it succeeds on 65.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 64.8% (margin +0.5 points, 95% interval [-5.4, +5.7] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=1 beats every single configuration; at $0.05607 per task it succeeds on 60.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 56.2% (margin +4.3 points, 95% interval [-0.8, +8.6] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. paretobandit online lambda_c=0 does not beat every single configuration: at $2.203 per task it succeeds on 83.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 83.7% (margin +0.0 points, 95% interval [-2.1, +0.0] points). cloud-big (high) alone costs $2.203 per task and succeeds on 83.7%.",
+    "SYNTHETIC DATA. NOT A RESULT. paretobandit online lambda_c=0.1 beats every single configuration: at $0.06589 per task it succeeds on 63.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 57.9% (margin +5.8 points, 95% interval [+2.7, +9.6] points).",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=0.3 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=0.5 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=1 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0.",
+    "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points).",
+    "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+  ],
+  "evaluations": [
+    {
+      "kind": "grid",
+      "level": "task",
+      "scope": "Task-level, full-information evaluation on the replay grid. Each policy's decision at task start is applied to the whole task, as one configuration or a cascade of configurations. No run in the grid switches model within a task, so step-level routing, the switch tax and within-task switching are NOT measured here; they can only be estimated from logged traces with propensities.",
+      "provenance": {
+        "source": "grid.jsonl",
+        "sha256": "cee46f5b14daf2b1c2e5d35575430bbe9e36257c85467903afe290d4607bc90c",
+        "header": {
+          "format": "steproute-grid",
+          "generator": "steproute.eval.synthetic",
+          "seed": 0
+        },
+        "skipped_lines": 0,
+        "runs": 6000,
+        "unlabelled_runs": 0,
+        "uncosted_runs": 0,
+        "runs_without_latency": 0,
+        "tasks_total": 1000,
+        "split": "test",
+        "tasks_in_split": 190,
+        "configurations": [
+          "cloud-big (high)",
+          "cloud-big (medium)",
+          "cloud-mid (medium)",
+          "cloud-small (high)",
+          "cloud-small (low)",
+          "local-small (medium)"
+        ],
+        "excluded_configurations": [],
+        "tasks_evaluated": 190,
+        "tasks_excluded": 0,
+        "tasks_excluded_by_reason": {
+          "missing_run": 0,
+          "unlabelled_run": 0,
+          "uncosted_run": 0
+        },
+        "incomplete_cells_by_configuration": {},
+        "baseline": {
+          "upstream": {
+            "name": "ParetoBandit",
+            "repository": "https://github.com/ParetoBandit/ParetoBandit",
+            "commit": "72ccbefe5cb858c95e00368e2b68de3c2b28a2ee",
+            "version": "paretobandit 0.1.1 (PyPI; src/ identical to tag v0.1.1, e20a5979)",
+            "licence": "Apache-2.0",
+            "paper": "arXiv 2604.00136",
+            "use": "dependency"
+          },
+          "trained_on": "train tasks only (retrained from scratch; no shipped priors or PCA)",
+          "modes": {
+            "full": "every arm updated with its outcome on every training task",
+            "online": "route, then reward of the picked arm only (bandit feedback)"
+          },
+          "hyperparameters": {
+            "alpha": {
+              "full": 0.01,
+              "online": 0.05
+            },
+            "init_lambda": 1.0,
+            "forgetting_factor": 1.0,
+            "cost_penalty_sweep": [
+              0.0,
+              0.1,
+              0.3,
+              0.5,
+              1.0
+            ],
+            "priors": "none",
+            "budget_pacer": null,
+            "cost_anchors_per_task_usd": [
+              0.04524343143921534,
+              2.2311868406206616
+            ]
+          },
+          "arms": {
+            "medium:local-small": 0.0,
+            "low:cloud-small": 0.04524343143921534,
+            "high:cloud-small": 0.10753484007974298,
+            "medium:cloud-mid": 0.34257052469959093,
+            "medium:cloud-big": 1.3426238952329566,
+            "high:cloud-big": 2.2311868406206616
+          },
+          "arm_price": "mean realised cost per task on the train tasks (USD)",
+          "context": {
+            "source": "the tabular predictor's state block (steproute.ml.features), no text",
+            "columns": [
+              "task_hint",
+              "task_hint==0",
+              "task_hint==1",
+              "task_hint==2",
+              "task_hint==3",
+              "task_hint==4"
+            ],
+            "standardised_on": "train tasks",
+            "one_hot_max_levels": 8
+          },
+          "tasks_by_role": {
+            "probe": 50,
+            "train": 523,
+            "tune": 95,
+            "calibration": 142,
+            "test": 190
+          },
+          "split_seed": 0,
+          "excluded_configs": []
+        }
+      },
+      "frontier": {
+        "definition": "upper concave envelope of the single-configuration points and the origin (declining a unit); flat beyond the configuration with the highest success",
+        "configurations": [
+          {
+            "label": "cloud-big (high)",
+            "success_rate": {
+              "value": 0.8368421053,
+              "ci": [
+                0.7736842105,
+                0.8842105263
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 2.2029330063,
+              "ci": [
+                1.9478820606,
+                2.4685797882
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-big (medium)",
+            "success_rate": {
+              "value": 0.7894736842,
+              "ci": [
+                0.7263157895,
+                0.8421052632
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 1.3507221686,
+              "ci": [
+                1.1916586162,
+                1.5454577171
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-mid (medium)",
+            "success_rate": {
+              "value": 0.7263157895,
+              "ci": [
+                0.6631578947,
+                0.7894736842
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.3519021376,
+              "ci": [
+                0.3137536635,
+                0.3983516164
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-small (high)",
+            "success_rate": {
+              "value": 0.6421052632,
+              "ci": [
+                0.5736842105,
+                0.7105263158
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.1037549055,
+              "ci": [
+                0.0915056435,
+                0.1189585465
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "cloud-small (low)",
+            "success_rate": {
+              "value": 0.5263157895,
+              "ci": [
+                0.4578947368,
+                0.6
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.0456473875,
+              "ci": [
+                0.0401931597,
+                0.051826473
+              ],
+              "n": 190
+            }
+          },
+          {
+            "label": "local-small (medium)",
+            "success_rate": {
+              "value": 0.4684210526,
+              "ci": [
+                0.4,
+                0.5421052632
+              ],
+              "n": 190
+            },
+            "cost": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            }
+          }
+        ],
+        "envelope": [
+          {
+            "label": "local-small (medium)",
+            "cost": 0.0,
+            "success_rate": 0.4684210526
+          },
+          {
+            "label": "cloud-small (high)",
+            "cost": 0.1037549055,
+            "success_rate": 0.6421052632
+          },
+          {
+            "label": "cloud-mid (medium)",
+            "cost": 0.3519021376,
+            "success_rate": 0.7263157895
+          },
+          {
+            "label": "cloud-big (medium)",
+            "cost": 1.3507221686,
+            "success_rate": 0.7894736842
+          },
+          {
+            "label": "cloud-big (high)",
+            "cost": 2.2029330063,
+            "success_rate": 0.8368421053
+          }
+        ],
+        "excluded": {}
+      },
+      "policies": [
+        {
+          "name": "paretobandit full lambda_c=0",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8157894737,
+              "ci": [
+                0.7578947368,
+                0.8684210526
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.9796195919,
+              "ci": [
+                1.7391815289,
+                2.258007733
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 2.4266304675,
+              "ci": [
+                2.0487637636,
+                2.9038300189
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.9748427673,
+              "ci": [
+                0.9329268293,
+                1.012195122
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9559748428,
+              "ci": [
+                0.9105425733,
+                0.9808917197
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1139.7936945808,
+              "ci": [
+                987.3365999607,
+                1269.8971250266
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6170.9400425352,
+              "ci": [
+                5335.4042476033,
+                6734.8056956046
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.0086402057,
+              "ci": [
+                -0.0368421053,
+                0.0208634521
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.1554469579,
+              "ci": [
+                -0.8342503284,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0 beats every single configuration; at $1.98 per task it succeeds on 81.6% of tasks, where the best any single configuration or random mix of them reaches at that spend is 82.4% (margin -0.9 points, 95% interval [-3.7, +2.1] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (high)": 146.0,
+              "cloud-big (medium)": 44.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit full lambda_c=0.1",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8157894737,
+              "ci": [
+                0.7578947368,
+                0.8684210526
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.9796195919,
+              "ci": [
+                1.7391815289,
+                2.258007733
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 2.4266304675,
+              "ci": [
+                2.0487637636,
+                2.9038300189
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.9748427673,
+              "ci": [
+                0.9329268293,
+                1.012195122
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9559748428,
+              "ci": [
+                0.9105425733,
+                0.9808917197
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1139.7936945808,
+              "ci": [
+                987.3365999607,
+                1269.8971250266
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6170.9400425352,
+              "ci": [
+                5335.4042476033,
+                6734.8056956046
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.0086402057,
+              "ci": [
+                -0.0368421053,
+                0.0208634521
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.1554469579,
+              "ci": [
+                -0.8342503284,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.1 beats every single configuration; at $1.98 per task it succeeds on 81.6% of tasks, where the best any single configuration or random mix of them reaches at that spend is 82.4% (margin -0.9 points, 95% interval [-3.7, +2.1] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (high)": 146.0,
+              "cloud-big (medium)": 44.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit full lambda_c=0.3",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.7473684211,
+              "ci": [
+                0.6789473684,
+                0.8052631579
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.4806329454,
+              "ci": [
+                1.2244869828,
+                1.7955793914
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.9811285889,
+              "ci": [
+                1.5722792754,
+                2.5012063555
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.893081761,
+              "ci": [
+                0.8292682927,
+                0.9457138686
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.8679245283,
+              "ci": [
+                0.8064516129,
+                0.9146341463
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 675.7258892694,
+              "ci": [
+                336.2340450676,
+                881.4470090626
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6151.0568095107,
+              "ci": [
+                5335.4042476033,
+                6728.2008720882
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": -0.0493260917,
+              "ci": [
+                -0.0947368421,
+                0.0026774771
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": -0.7957907975,
+              "ci": [
+                -1.3041186174,
+                -0.0721778464
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.3 beats every single configuration; at $1.481 per task it succeeds on 74.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 79.7% (margin -4.9 points, 95% interval [-9.5, +0.3] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (low)": 87.0,
+              "cloud-big (high)": 59.0,
+              "cloud-big (medium)": 44.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit full lambda_c=0.5",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.6526315789,
+              "ci": [
+                0.5842105263,
+                0.7157894737
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.121493643,
+              "ci": [
+                0.0961557252,
+                0.1524947901
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.1861596143,
+              "ci": [
+                0.143030128,
+                0.2422873731
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.7798742138,
+              "ci": [
+                0.70363078,
+                0.8530972076
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.748427673,
+              "ci": [
+                0.6746754074,
+                0.8128499258
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 339.8545034335,
+              "ci": [
+                213.9051638452,
+                447.0385084568
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 1686.4257339817,
+              "ci": [
+                1457.248009463,
+                1849.2340672237
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0045065492,
+              "ci": [
+                -0.0544548697,
+                0.0571063958
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.0132796665,
+              "ci": [
+                -0.0514995129,
+                0.1546904605
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=0.5 beats every single configuration; at $0.1215 per task it succeeds on 65.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 64.8% (margin +0.5 points, 95% interval [-5.4, +5.7] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (low)": 118.0,
+              "cloud-small (high)": 44.0,
+              "cloud-mid (medium)": 28.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit full lambda_c=1",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.6052631579,
+              "ci": [
+                0.5368421053,
+                0.6736842105
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.0560726636,
+              "ci": [
+                0.0492208708,
+                0.0629298268
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.092641792,
+              "ci": [
+                0.0761506671,
+                0.1144699979
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.7232704403,
+              "ci": [
+                0.6481481481,
+                0.7974683544
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.6981132075,
+              "ci": [
+                0.6266279498,
+                0.76875
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 311.0152622549,
+              "ci": [
+                201.0239168291,
+                401.6331693252
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 1122.0672252622,
+              "ci": [
+                1027.8282704625,
+                1348.8183154016
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0429772778,
+              "ci": [
+                -0.0079145158,
+                0.0855262109
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.0256736256,
+              "ci": [
+                -0.0089799612,
+                0.0886708344
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit full lambda_c=1 beats every single configuration; at $0.05607 per task it succeeds on 60.5% of tasks, where the best any single configuration or random mix of them reaches at that spend is 56.2% (margin +4.3 points, 95% interval [-0.8, +8.6] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (low)": 146.0,
+              "cloud-small (high)": 44.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit online lambda_c=0",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8368421053,
+              "ci": [
+                0.7736842105,
+                0.8842105263
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 2.2029330063,
+              "ci": [
+                1.9478820606,
+                2.4685797882
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 2.632435668,
+              "ci": [
+                2.2468300953,
+                3.1159904926
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 1570.5333813001,
+              "ci": [
+                1270.6947367769,
+                1834.755946104
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6170.9400425352,
+              "ci": [
+                5358.5689731987,
+                6734.8056956046
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0,
+              "ci": [
+                -0.0210526316,
+                0.0
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.0,
+              "ci": [
+                -1.0441430649,
+                0.0
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "does_not_beat",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. paretobandit online lambda_c=0 does not beat every single configuration: at $2.203 per task it succeeds on 83.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 83.7% (margin +0.0 points, 95% interval [-2.1, +0.0] points). cloud-big (high) alone costs $2.203 per task and succeeds on 83.7%."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-big (high)": 190.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit online lambda_c=0.1",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.6368421053,
+              "ci": [
+                0.5684210526,
+                0.7
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.0658906342,
+              "ci": [
+                0.057044476,
+                0.076728665
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.1034646323,
+              "ci": [
+                0.0853287532,
+                0.1286845449
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.7610062893,
+              "ci": [
+                0.6874726578,
+                0.8322981366
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.7358490566,
+              "ci": [
+                0.6624217871,
+                0.7987421384
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 454.3398164457,
+              "ci": [
+                358.2169247452,
+                540.621005857
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8136.9251032396,
+              "ci": [
+                5715.0819326671,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0581210843,
+              "ci": [
+                0.0269719302,
+                0.0957233019
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.0347201832,
+              "ci": [
+                0.01561156,
+                0.0905117431
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. paretobandit online lambda_c=0.1 beats every single configuration: at $0.06589 per task it succeeds on 63.7% of tasks, where the best any single configuration or random mix of them reaches at that spend is 57.9% (margin +5.8 points, 95% interval [+2.7, +9.6] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (high)": 159.0,
+              "local-small (medium)": 31.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit online lambda_c=0.3",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.5105263158,
+              "ci": [
+                0.4421052632,
+                0.5789473684
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.0205038743,
+              "ci": [
+                0.0171963459,
+                0.0245780951
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.0401622281,
+              "ci": [
+                0.0319405024,
+                0.0512903316
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.6100628931,
+              "ci": [
+                0.5323036746,
+                0.6861180289
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.6037735849,
+              "ci": [
+                0.5251898596,
+                0.6775405263
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 282.5700359314,
+              "ci": [
+                219.5616747909,
+                372.2899201081
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8274.4672490933,
+              "ci": [
+                6670.84836034,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0077820742,
+              "ci": [
+                -0.0586857088,
+                0.0578573488
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.00464883,
+              "ci": [
+                -0.0215398386,
+                0.0267696411
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=0.3 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (low)": 131.0,
+              "local-small (medium)": 59.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit online lambda_c=0.5",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.5105263158,
+              "ci": [
+                0.4421052632,
+                0.5789473684
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.0205038743,
+              "ci": [
+                0.0171963459,
+                0.0245780951
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.0401622281,
+              "ci": [
+                0.0319405024,
+                0.0512903316
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.6100628931,
+              "ci": [
+                0.5323036746,
+                0.6861180289
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.6037735849,
+              "ci": [
+                0.5251898596,
+                0.6775405263
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 282.5700359314,
+              "ci": [
+                219.5616747909,
+                372.2899201081
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8274.4672490933,
+              "ci": [
+                6670.84836034,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0077820742,
+              "ci": [
+                -0.0586857088,
+                0.0578573488
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.00464883,
+              "ci": [
+                -0.0215398386,
+                0.0267696411
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=0.5 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (low)": 131.0,
+              "local-small (medium)": 59.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "paretobandit online lambda_c=1",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.5105263158,
+              "ci": [
+                0.4421052632,
+                0.5789473684
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.0205038743,
+              "ci": [
+                0.0171963459,
+                0.0245780951
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.0401622281,
+              "ci": [
+                0.0319405024,
+                0.0512903316
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 0.6100628931,
+              "ci": [
+                0.5323036746,
+                0.6861180289
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.6037735849,
+              "ci": [
+                0.5251898596,
+                0.6775405263
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 282.5700359314,
+              "ci": [
+                219.5616747909,
+                372.2899201081
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 8274.4672490933,
+              "ci": [
+                6670.84836034,
+                9906.4787231506
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0077820742,
+              "ci": [
+                -0.0586857088,
+                0.0578573488
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": 0.00464883,
+              "ci": [
+                -0.0215398386,
+                0.0267696411
+              ],
+              "n": 190
+            }
+          },
+          "verdict": {
+            "status": "not_shown",
+            "reasons": [
+              "the margin's interval contains 0"
+            ],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. Not shown: this data cannot tell whether paretobandit online lambda_c=1 beats every single configuration; at $0.0205 per task it succeeds on 51.1% of tasks, where the best any single configuration or random mix of them reaches at that spend is 50.3% (margin +0.8 points, 95% interval [-5.9, +5.8] points), and the interval contains 0."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-small (low)": 131.0,
+              "local-small (medium)": 59.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "rules",
+          "hindsight": false,
+          "metrics": {
+            "success_rate": {
+              "value": 0.8631578947,
+              "ci": [
+                0.8105263158,
+                0.9052631579
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 1.0567730353,
+              "ci": [
+                0.8411097255,
+                1.2990402649
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 1.2243102238,
+              "ci": [
+                0.9419944332,
+                1.57534685
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.0314465409,
+              "ci": [
+                0.96875,
+                1.1060152805
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 0.9182389937,
+              "ci": [
+                0.8652605804,
+                0.950617284
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.2736842105,
+              "ci": [
+                0.2105263158,
+                0.3368421053
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.2736842105,
+              "ci": [
+                0.2105263158,
+                0.3368421053
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 2381.3260923551,
+              "ci": [
+                2106.9614994901,
+                2738.1571887149
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 637.7099018096,
+              "ci": [
+                524.0344307614,
+                851.990424028
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 5909.5547658766,
+              "ci": [
+                5211.8678483025,
+                6547.5834569827
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.0922713512,
+              "ci": [
+                0.0700326819,
+                0.1371162231
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                0.7481050592,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. rules beats every single configuration: at $1.057 per task it succeeds on 86.3% of tasks, where the best any single configuration or random mix of them reaches at that spend is 77.1% (margin +9.2 points, 95% interval [+7.0, +13.7] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "cloud-mid (medium) -> cloud-big (medium)": 190.0
+            },
+            "latency_tasks": 190
+          }
+        },
+        {
+          "name": "oracle",
+          "hindsight": true,
+          "metrics": {
+            "success_rate": {
+              "value": 0.9421052632,
+              "ci": [
+                0.9,
+                0.9684210526
+              ],
+              "n": 190
+            },
+            "cost_per_task": {
+              "value": 0.4873867816,
+              "ci": [
+                0.3162977254,
+                0.7185966929
+              ],
+              "n": 190
+            },
+            "cost_per_solved": {
+              "value": 0.5173379246,
+              "ci": [
+                0.3347825888,
+                0.7580235275
+              ],
+              "n": 190
+            },
+            "quality_retention": {
+              "value": 1.1257861635,
+              "ci": [
+                1.0784857028,
+                1.1986754967
+              ],
+              "n": 190,
+              "note": "versus cloud-big (high)"
+            },
+            "strongest_solved_retained": {
+              "value": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "n": 190
+            },
+            "switches_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "config_changes_per_task": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p50_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "added_latency_p95_ms": {
+              "value": 0.0,
+              "ci": [
+                0.0,
+                0.0
+              ],
+              "n": 190
+            },
+            "total_latency_p50_ms": {
+              "value": 929.182733829,
+              "ci": [
+                770.7111758639,
+                1091.740054323
+              ],
+              "n": 190
+            },
+            "total_latency_p95_ms": {
+              "value": 6728.2008720882,
+              "ci": [
+                5102.6493295289,
+                8818.8700339487
+              ],
+              "n": 190
+            },
+            "frontier_margin": {
+              "value": 0.20722244,
+              "ci": [
+                0.1637669798,
+                0.2566247483
+              ],
+              "n": 190
+            },
+            "cost_saving_at_equal_success": {
+              "value": null,
+              "unbounded": true,
+              "ci": [
+                null,
+                null
+              ],
+              "ci_unbounded": true,
+              "n": 190,
+              "note": "above the frontier's top: no single configuration reaches this success rate"
+            }
+          },
+          "verdict": {
+            "status": "beats_frontier",
+            "reasons": [],
+            "sentence": "SYNTHETIC DATA. NOT A RESULT. oracle (hindsight oracle: an upper reference that reads outcomes, not a policy) beats every single configuration: at $0.4874 per task it succeeds on 94.2% of tasks, where the best any single configuration or random mix of them reaches at that spend is 73.5% (margin +20.7 points, 95% interval [+16.4, +25.7] points)."
+          },
+          "diagnostics": {
+            "tasks_evaluated": 190,
+            "tasks_unsupported": 0,
+            "unsupported_reasons": {},
+            "strongest_configuration": "cloud-big (high)",
+            "action_mix": {
+              "local-small (medium)": 100.0,
+              "cloud-small (low)": 31.0,
+              "cloud-small (high)": 22.0,
+              "cloud-mid (medium)": 15.0,
+              "cloud-big (medium)": 13.0,
+              "cloud-big (high)": 9.0
+            },
+            "latency_tasks": 190
+          }
+        }
+      ],
+      "ranking": [
+        {
+          "name": "rules",
+          "frontier_margin": 0.0922713512,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 1,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit online lambda_c=0.1",
+          "frontier_margin": 0.0581210843,
+          "utility": null,
+          "verdict": "beats_frontier",
+          "rank": 2,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit full lambda_c=1",
+          "frontier_margin": 0.0429772778,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 3,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit online lambda_c=0.3",
+          "frontier_margin": 0.0077820742,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 4,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit online lambda_c=0.5",
+          "frontier_margin": 0.0077820742,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 5,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit online lambda_c=1",
+          "frontier_margin": 0.0077820742,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 6,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit full lambda_c=0.5",
+          "frontier_margin": 0.0045065492,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 7,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit online lambda_c=0",
+          "frontier_margin": 0.0,
+          "utility": null,
+          "verdict": "does_not_beat",
+          "rank": 8,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit full lambda_c=0",
+          "frontier_margin": -0.0086402057,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 9,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit full lambda_c=0.1",
+          "frontier_margin": -0.0086402057,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 10,
+          "ranked_by": "frontier_margin"
+        },
+        {
+          "name": "paretobandit full lambda_c=0.3",
+          "frontier_margin": -0.0493260917,
+          "utility": null,
+          "verdict": "not_shown",
+          "rank": 11,
+          "ranked_by": "frontier_margin"
+        }
+      ],
+      "notes": [
+        "Cascades are simulated from independent single-configuration runs: a cascade succeeds if any step's run succeeded and pays for a step only when every earlier step failed. Each step's cost is that of a fresh run, so cache reuse between steps (and any benefit of seeing the earlier failure) is not in the data.",
+        "Added latency is the time spent in cascade attempts before the one that produced the final result; routing-decision time is not in the grid and is not included."
+      ],
+      "stamp": "SYNTHETIC DATA. NOT A RESULT."
+    }
+  ],
+  "stamp": "SYNTHETIC DATA. NOT A RESULT.",
+  "synthetic_data": true,
+  "notice": "SYNTHETIC DATA. NOT A RESULT. This report was made from the evaluator's synthetic generator. It says nothing about real models."
+}
