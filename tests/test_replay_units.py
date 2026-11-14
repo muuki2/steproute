@@ -19,10 +19,10 @@ from steproute.replay.config import (
 )
 from steproute.replay.journal import Journal, LockHeld, OutputLock
 from steproute.replay.ledger import CapExceeded, CapGuard, Ledger, month_of
-from steproute.replay.plan import build_named_plan
+from steproute.replay.plan import PlanError, build_named_plan, load_plan_file
 from steproute.replay.preflight import preflight
 from steproute.tasks.estimate import build_plans, estimate_plan, load_assumptions
-from steproute.tasks.manifest import load_default_manifest
+from steproute.tasks.manifest import load_default_manifest, parse_manifest
 
 CAT = load_default_catalog()
 MAN = load_default_manifest()
@@ -74,6 +74,30 @@ def test_pilot_plan_is_cheapest_first_and_matches_the_task_set_document() -> Non
     assert plan.gate is not None and len(plan.gate.reduced_tasks) == 10
     strata = [MAN.get(t).stratum for t in plan.gate.reduced_tasks]
     assert sorted(strata) == sorted(["easy"] * 3 + ["medium"] * 3 + ["hard"] * 3 + ["unsolved"])
+
+
+def test_no_plan_contains_a_broken_task(tmp_path: Path) -> None:
+    broken = {t.id for t in MAN.broken_tasks}
+    assert broken
+    for name in ("pilot", "sparse"):
+        assert not broken & {s.task_id for s in build_named_plan(name, MAN, CAT, ASSUME).specs}
+    for sel in ('"all"', '"pilot"', "[" + ", ".join(f'"{i}"' for i in sorted(broken)) + "]"):
+        f = tmp_path / "p.toml"
+        f.write_text(f'[[block]]\ntasks = {sel}\nconfigs = [["qwen3-coder:30b", "medium"]]\n')
+        if sel.startswith("["):
+            with pytest.raises(PlanError, match="marked broken"):
+                load_plan_file(f, MAN, CAT, ASSUME)
+        else:
+            plan = load_plan_file(f, MAN, CAT, ASSUME)
+            assert not broken & {s.task_id for s in plan.specs}
+
+
+def test_a_small_manifest_with_a_broken_task_plans_without_it() -> None:
+    m = parse_manifest(
+        {"task": [{"id": "a", "pilot": True, "stratum": "easy"}, {"id": "b", "broken": "x"}]}
+    )
+    plan = build_named_plan("pilot", m, CAT, ASSUME)
+    assert {s.task_id for s in plan.specs} == {"a"}
 
 
 def test_sparse_plan_is_option_b() -> None:

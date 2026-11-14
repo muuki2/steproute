@@ -167,6 +167,9 @@ def _specs(
     repeats: int = 1,
     stage_of: Mapping[tuple[str, str], int] | None = None,
 ) -> list[RunSpec]:
+    for t in tasks:
+        if t.broken is not None:
+            raise PlanError(f"task {t.id!r} is marked broken ({t.broken}); a plan cannot run it")
     out = []
     for model, effort in configs:
         if model not in catalog:
@@ -306,7 +309,7 @@ def load_plan_file(
             tasks = list(manifest.pilot())
         else:
             try:
-                tasks = [manifest.get(str(t)) for t in sel]
+                tasks = [manifest.get(str(t)) for t in sel]  # a broken one is refused by _specs
             except KeyError as exc:
                 raise PlanError(f"{p}: block {i + 1}: unknown task {exc}") from None
         configs = [(str(c[0]), str(c[1])) for c in b.get("configs", [])]

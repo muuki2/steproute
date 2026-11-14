@@ -108,6 +108,42 @@ def test_manifest_is_strict(data: dict, match: str) -> None:
         parse_manifest(data)
 
 
+def test_default_manifest_keeps_the_broken_tasks_out_of_the_set() -> None:
+    m = load_default_manifest()
+    assert {t.id for t in m.broken_tasks} == {
+        "psf__requests-1766",
+        "psf__requests-1921",
+        "psf__requests-2317",
+        "psf__requests-2931",
+        "psf__requests-5414",
+    }
+    for old in m.broken_tasks:
+        assert old.broken and old.pilot is False
+        assert old.id in m and m.get(old.id) is old  # the record stays, for `tasks check`
+        assert old.id not in {t.id for t in m} and old not in m.pilot()
+        new = m.get(old.replaced_by or "")
+        assert new in m.tasks and new.stratum == old.stratum
+        assert not new.id.startswith("psf__")  # a repository whose tests reach the network
+    assert m.get("psf__requests-1921").replaced_by == "django__django-13401"
+    assert m.get("django__django-13401").pilot  # it took the pilot slot
+
+
+def test_broken_tasks_are_not_counted_and_are_validated() -> None:
+    base = [{"id": "a", "pilot": True}, {"id": "b", "broken": "gold fails", "replaced_by": "a"}]
+    m = parse_manifest({"meta": {"full_size": 1, "pilot_size": 1}, "task": base})
+    assert len(m) == 1 and [t.id for t in m] == ["a"] and [t.id for t in m.broken_tasks] == ["b"]
+    assert "b" in m and m.get("b").broken == "gold fails"
+    for tasks, match in [
+        ([{"id": "a"}, {"id": "b", "broken": ""}], "give the reason"),
+        ([{"id": "a"}, {"id": "b", "replaced_by": "a"}], "needs 'broken'"),
+        ([{"id": "a"}, {"id": "b", "broken": "x", "replaced_by": "zz"}], "not a working task"),
+        ([{"id": "a"}, {"id": "b", "broken": "x", "pilot": True}], "cannot be in the pilot"),
+        ([{"id": "b", "broken": "x"}], "at least one"),
+    ]:
+        with pytest.raises(ManifestError, match=match):
+            parse_manifest({"task": tasks})
+
+
 # --- local backend: the end-to-end check ---------------------------------------------------------
 
 
