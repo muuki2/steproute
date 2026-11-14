@@ -129,6 +129,9 @@ class ReplayConfig:
     catalog_path: Path | None = None
     #: Unload the previous Ollama model before loading the next (``keep_alive = 0``).
     manage_ollama: bool = True
+    #: ``[ledger] path``: the shared spend ledger. ``None``: ``$STEPROUTE_LEDGER``, else the
+    #: per-user state directory (``steproute.replay.ledger.resolve_ledger_path``).
+    ledger_path: Path | None = None
     path: Path | None = None
 
     def provider(self, name: str) -> ProviderConfig:
@@ -255,6 +258,7 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         "environment",
         "check",
         "catalog",
+        "ledger",
     }
     unknown = sorted(set(data) - known)
     if unknown:
@@ -339,6 +343,15 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         raise ReplayConfigError("[catalog] takes only path")
     cat_p = (base / _value("[catalog] path", cat["path"], "str")).resolve() if cat else None
 
+    led = _table(data, "ledger")
+    if sorted(set(led) - {"path"}):
+        raise ReplayConfigError("[ledger] takes only path")
+    led_p = (
+        (base / Path(_value("[ledger] path", led["path"], "str")).expanduser()).absolute()
+        if "path" in led
+        else None
+    )
+
     return ReplayConfig(
         caps=caps,
         totals=totals,
@@ -352,6 +365,7 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         rows=rows_p,
         catalog_path=cat_p,
         manage_ollama=manage,
+        ledger_path=led_p,
     )
 
 

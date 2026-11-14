@@ -65,6 +65,7 @@ def preflight(
     run: Exec = _exec,
     fetch: Fetch = _fetch,
     disk_free_gb: Callable[[Path], float] | None = None,
+    ledger_path: Path | None = None,
 ) -> list[Check]:
     checks: list[Check] = []
     tasks = {s.task_id for s in plan.specs}
@@ -162,7 +163,27 @@ def preflight(
     checks.append(Check("free disk", gb >= need, f"{gb:.0f} GB free at {out} (need {need:.0f} GB)"))
     if shutil.which("git") is None:
         checks.append(Check("git", False, "git is not on PATH"))
+    if ledger_path is not None:
+        checks.append(_ledger_check(ledger_path, out))
     return checks
+
+
+def _ledger_check(path: Path, out: Path) -> Check:
+    """The shared ledger knows every paid call of this directory (read only)."""
+    from steproute.replay.ledger import Ledger
+
+    local = out / "ledger.jsonl"
+    mine = Ledger(local).intents if local.exists() else {}
+    known = Ledger(path).intents if path.exists() else {}
+    unknown = [i for i in mine if i not in known]
+    if unknown:
+        return Check(
+            "spend ledger",
+            False,
+            f"{local} has {len(unknown)} call(s) that {path} does not know; "
+            f"run `steproute replay ledger import --out {out}`",
+        )
+    return Check("spend ledger", True, f"{path}" + ("" if path.exists() else " (not created yet)"))
 
 
 def _free_gb(path: Path) -> float:

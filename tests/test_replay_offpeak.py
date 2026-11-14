@@ -21,7 +21,14 @@ import pytest
 pytest.importorskip("litellm")
 
 from proxy_harness import NetworkGuard  # noqa: E402
-from replay_harness import ScriptedAgent, build, config_for, environ_with, fake_key  # noqa: E402
+from replay_harness import (  # noqa: E402
+    ScriptedAgent,
+    build,
+    config_for,
+    environ_with,
+    fake_key,
+    shared_ledger,
+)
 from steproute.collectors.mock_upstream import MockUpstream, Received, Reply  # noqa: E402
 from steproute.core.catalog import load_default_catalog  # noqa: E402
 from steproute.core.offpeak import peak_hours  # noqa: E402
@@ -113,6 +120,7 @@ def _runner(plan: Any, manifest: Any, cfg: Any, out: Path, clock: FakeClock, **k
             out=buf,
             clock=clock,
             sleep=clock.sleep,
+            ledger_path=kw.pop("ledger_path", shared_ledger(out)),
             **kw,
         ),
     )
@@ -245,7 +253,7 @@ def test_dry_run_shows_the_off_peak_estimate_and_the_next_window(tmp_path: Path)
     text = buf.getvalue()
     line = next(x for x in text.splitlines() if x.strip().startswith("deepseek"))
     assert "~$17.57" in line and "at peak (list) prices" in line and "cap $10.00/month" in line
-    assert "total budget $10.00 (all months)" in text
+    assert "total budget $10.00 (all months, all directories)" in text
     assert "scheduled off-peak only: ~$8.79" in text and "against $10.00 left" in text
     assert "the central estimate fits" in text
     assert "now 2026-11-16 02:00 UTC (" in text and "is peak" in text
