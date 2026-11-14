@@ -269,7 +269,10 @@ class ProxyChatClient:
     worst_call: float
     ledger: Ledger | None
     stop: threading.Event
-    started: float = field(default_factory=time.monotonic)
+    #: The run's timer (seconds, any origin): the run timeout and the length of a pause are
+    #: measured with it. Tests replace it, so neither depends on how fast the machine is.
+    monotonic: Callable[[], float] = time.monotonic
+    started: float = field(init=False, default=0.0)
     sleep: Callable[[float], None] = time.sleep
     outcome_timeout_s: float = 30.0
     calls: list[CallRecord] = field(default_factory=list)
@@ -288,7 +291,7 @@ class ProxyChatClient:
     offpeak_only: bool = False
     #: Pause when less off-peak than this is left before a call.
     call_margin_s: float = 600.0
-    #: Wall clock (Unix seconds) for peak hours; the run timeout uses ``time.monotonic``.
+    #: Wall clock (Unix seconds) for peak hours; the run timeout uses ``monotonic``.
     clock: Callable[[], float] = time.time
     #: This run's budget: it stops before a call once its spend reaches this. ``None`` or
     #: ``limits.run_cap_usd``: the per-run cap (``run_cap``, a labelled failure). Lower: a
@@ -300,6 +303,9 @@ class ProxyChatClient:
     list_spent: float = 0.0
     _last_prompt_tokens: int = 0
     _last_chars: int = 0
+
+    def __post_init__(self) -> None:
+        self.started = self.monotonic()
 
     @property
     def threshold(self) -> float:
@@ -337,14 +343,14 @@ class ProxyChatClient:
                 f"run {self.run_id}: {self.spec.model} paused for {self.spec.provider} peak hours "
                 f"until {fmt_instant(resume)}"
             )
-        t0 = time.monotonic()
+        t0 = self.monotonic()
         try:
             while (now := self.clock()) < resume:
                 if self.stop.is_set():
                     raise RunStopped("interrupted", "the runner stopped while waiting for off-peak")
                 self.sleep(min(PAUSE_CHUNK_S, resume - now))
         finally:
-            self.paused_s += time.monotonic() - t0
+            self.paused_s += self.monotonic() - t0
 
     # --- limits ---
 
@@ -363,7 +369,7 @@ class ProxyChatClient:
         if self.stop.is_set():
             raise RunStopped("interrupted", "the runner is stopping")
         self._over_budget()
-        if time.monotonic() - self.started - self.paused_s > self.limits.run_timeout_s:
+        if self.monotonic() - self.started - self.paused_s > self.limits.run_timeout_s:
             raise RunStopped("wall_time", f"the run passed {self.limits.run_timeout_s:g} s")
         chars, est = self._prompt_estimate(messages)
         if self.spec.local:
