@@ -1,9 +1,10 @@
 """The replay runner's configuration: one strict TOML file. Standard library only.
 
-Every default is the safe one: the D3 caps ($80 Anthropic, $20 DeepSeek per UTC calendar
-month), a $3 per-run cap, sequential local runs, and no key in the file (only the NAME of the
-environment variable that holds it). A cap above its default needs ``allow_raise = true`` in
-the same table, so raising one is always a visible, deliberate edit. See ``docs/REPLAY.md``.
+Every default is the safe one: the D3 caps ($80 Anthropic, $10 DeepSeek per UTC calendar
+month), DeepSeek's $10 total budget, DeepSeek calls only in its off-peak hours, a $3 per-run
+cap, sequential local runs, and no key in the file (only the NAME of the environment variable
+that holds it). A cap or total above its default needs ``allow_raise = true`` in the same
+table, so raising one is always a visible, deliberate edit. See ``docs/REPLAY.md``.
 """
 
 from __future__ import annotations
@@ -21,16 +22,23 @@ from steproute.tasks.check import find_harness, find_rows
 
 __all__ = [
     "DEFAULT_CAPS",
+    "DEFAULT_SCHEDULES",
+    "DEFAULT_TOTALS",
     "LOCAL_PROVIDERS",
     "Limits",
     "ProviderConfig",
     "ReplayConfig",
     "ReplayConfigError",
+    "Schedule",
     "load_replay_config",
 ]
 
 #: Monthly caps in USD per provider (decision D3). Raising one needs ``allow_raise = true``.
-DEFAULT_CAPS: Mapping[str, float] = {"anthropic": 80.0, "deepseek": 20.0}
+#: DeepSeek: $10, the whole of its funding (maintainer decision, 13 Nov 2026).
+DEFAULT_CAPS: Mapping[str, float] = {"anthropic": 80.0, "deepseek": 10.0}
+#: Total (all-time) budgets in USD per provider, over every month of one ledger. A provider
+#: without one has only its monthly cap. DeepSeek was funded once with $10.
+DEFAULT_TOTALS: Mapping[str, float] = {"deepseek": 10.0}
 #: Providers that run on this machine and cost nothing.
 LOCAL_PROVIDERS = ("ollama",)
 
@@ -49,6 +57,25 @@ class ProviderConfig:
     api_key_env: str | None = None
     base_url: str | None = None
     timeout_s: float = 600.0
+
+
+@dataclass(frozen=True)
+class Schedule:
+    """When a provider's runs may start. ``offpeak_only``: only in the model's off-peak hours
+    (``meta.peak_hours`` in the catalog), and no call is ever sent in peak hours.
+
+    ``start_margin_s``: a run starts only if off-peak lasts at least this long from now
+    (``None``: the run timeout). ``call_margin_s``: a run pauses before a call when less than
+    this is left, so a call does not run into peak hours (a call that does is billed at peak).
+    """
+
+    offpeak_only: bool = False
+    start_margin_s: float | None = None
+    call_margin_s: float = 600.0
+
+
+#: DeepSeek runs only off-peak by default (maintainer decision, 13 Nov 2026).
+DEFAULT_SCHEDULES: Mapping[str, Schedule] = {"deepseek": Schedule(offpeak_only=True)}
 
 
 @dataclass(frozen=True)
@@ -79,11 +106,17 @@ class Limits:
     #: the provider: every later run would cost about 3 times the estimate). 0 disables.
     cache_canary_runs: int = 3
     min_cache_read_share: float = 0.3
+    #: When a provider's headroom is below a run's full bound, the run is admitted with a
+    #: smaller budget (it stops as ``budget_stop`` when its spend reaches it), but never with
+    #: less than this. See docs/REPLAY.md, "Budget".
+    min_run_budget_usd: float = 0.5
 
 
 @dataclass(frozen=True)
 class ReplayConfig:
     caps: Mapping[str, float] = field(default_factory=lambda: dict(DEFAULT_CAPS))
+    totals: Mapping[str, float] = field(default_factory=lambda: dict(DEFAULT_TOTALS))
+    schedules: Mapping[str, Schedule] = field(default_factory=lambda: dict(DEFAULT_SCHEDULES))
     limits: Limits = field(default_factory=Limits)
     providers: Mapping[str, ProviderConfig] = field(default_factory=dict)
     #: Paid runs in parallel. Local runs are always sequential, one model loaded at a time.
@@ -108,6 +141,19 @@ class ReplayConfig:
             return None
         return self.caps.get(provider)
 
+    def total(self, provider: str) -> float | None:
+        """The all-time budget, ``None`` when the provider has none (or is local)."""
+        if provider in LOCAL_PROVIDERS:
+            return None
+        return self.totals.get(provider)
+
+    def schedule(self, provider: str) -> Schedule:
+        return self.schedules.get(provider) or Schedule()
+
+    def start_margin(self, provider: str) -> float:
+        m = self.schedule(provider).start_margin_s
+        return self.limits.run_timeout_s if m is None else m
+
 
 _DEFAULT_PROVIDERS = {
     "anthropic": ProviderConfig("anthropic", api_key_env="ANTHROPIC_API_KEY"),
@@ -129,6 +175,7 @@ _LIMIT_KEYS: dict[str, str] = {
     "max_observation_chars": "int",
     "cache_canary_runs": "int",
     "min_cache_read_share": "num",
+    "min_run_budget_usd": "num",
 }
 
 
@@ -153,30 +200,69 @@ def _table(data: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     return t
 
 
+def _money(
+    data: Mapping[str, Any], key: str, defaults: Mapping[str, float], per: str
+) -> dict[str, float]:
+    """``[caps]`` (monthly) or ``[totals]`` (all-time): provider = USD, plus ``allow_raise``."""
+    t = dict(_table(data, key))
+    allow = t.pop("allow_raise", False)
+    if not isinstance(allow, bool):
+        raise ReplayConfigError(f"[{key}] allow_raise must be true or false")
+    out = dict(defaults)
+    for prov, v in t.items():
+        if prov in LOCAL_PROVIDERS:
+            raise ReplayConfigError(f"[{key}] {prov} is local and free; it takes no cap")
+        usd = _value(f"[{key}] {prov}", v, "num")
+        default = defaults.get(prov)
+        if default is not None and usd > default and not allow:
+            raise ReplayConfigError(
+                f"[{key}] {prov} = {usd:g} is above the default ${default:g} {per}; raising it "
+                f"needs `allow_raise = true` in [{key}] (decision D3)"
+            )
+        out[prov] = usd
+    return out
+
+
+def _schedules(data: Mapping[str, Any]) -> dict[str, Schedule]:
+    out = dict(DEFAULT_SCHEDULES)
+    for prov, t in _table(data, "schedule").items():
+        where = f"[schedule.{prov}]"
+        if not isinstance(t, Mapping):
+            raise ReplayConfigError(f"{where} must be a table")
+        bad = sorted(set(t) - {"offpeak_only", "start_margin_s", "call_margin_s"})
+        if bad:
+            raise ReplayConfigError(f"{where} unknown key(s) {bad}")
+        prev = out.get(prov) or Schedule()
+        only = _value(f"{where} offpeak_only", t.get("offpeak_only", prev.offpeak_only), "bool")
+        margin = t.get("start_margin_s", prev.start_margin_s)
+        if margin is not None:
+            margin = _value(f"{where} start_margin_s", margin, "num")
+        call = _value(f"{where} call_margin_s", t.get("call_margin_s", prev.call_margin_s), "num")
+        out[prov] = Schedule(only, margin, call)
+    return out
+
+
 def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) -> ReplayConfig:
     """Validate a parsed config. Unknown sections and keys are errors."""
     base = base or Path.cwd()
-    known = {"caps", "limits", "concurrency", "providers", "environment", "check", "catalog"}
+    known = {
+        "caps",
+        "totals",
+        "schedule",
+        "limits",
+        "concurrency",
+        "providers",
+        "environment",
+        "check",
+        "catalog",
+    }
     unknown = sorted(set(data) - known)
     if unknown:
         raise ReplayConfigError(f"unknown section(s) {unknown}; expected {sorted(known)}")
 
-    caps_t = dict(_table(data, "caps"))
-    allow = caps_t.pop("allow_raise", False)
-    if not isinstance(allow, bool):
-        raise ReplayConfigError("[caps] allow_raise must be true or false")
-    caps = dict(DEFAULT_CAPS)
-    for prov, v in caps_t.items():
-        if prov in LOCAL_PROVIDERS:
-            raise ReplayConfigError(f"[caps] {prov} is local and free; it takes no cap")
-        usd = _value(f"[caps] {prov}", v, "num")
-        default = DEFAULT_CAPS.get(prov)
-        if default is not None and usd > default and not allow:
-            raise ReplayConfigError(
-                f"[caps] {prov} = {usd:g} is above the default ${default:g} a month; raising a "
-                "cap needs `allow_raise = true` in [caps] (decision D3: only after Gate A)"
-            )
-        caps[prov] = usd
+    caps = _money(data, "caps", DEFAULT_CAPS, "a month")
+    totals = _money(data, "totals", DEFAULT_TOTALS, "in total")
+    schedules = _schedules(data)
 
     lim_t = _table(data, "limits")
     bad = sorted(set(lim_t) - set(_LIMIT_KEYS))
@@ -189,6 +275,8 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         raise ReplayConfigError("[limits] step_limit and the token limits must be at least 1")
     if not 0.0 <= limits.min_cache_read_share <= 1.0:
         raise ReplayConfigError("[limits] min_cache_read_share must be in [0, 1]")
+    if limits.min_run_budget_usd > limits.run_cap_usd:
+        raise ReplayConfigError("[limits] min_run_budget_usd must not be above run_cap_usd")
 
     conc = _table(data, "concurrency")
     if sorted(set(conc) - {"paid"}):
@@ -253,6 +341,8 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
 
     return ReplayConfig(
         caps=caps,
+        totals=totals,
+        schedules=schedules,
         limits=limits,
         providers=providers,
         paid_concurrency=paid,

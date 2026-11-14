@@ -114,6 +114,12 @@ class Intent:
     run_id: str
     settled_usd: float | None = None
     flags: list[str] = field(default_factory=list)
+    #: ``peak``, ``offpeak`` or ``flat`` (``steproute.core.offpeak``): the price the call was
+    #: settled at. ``None`` on an open intent and on lines written before issue 57.
+    period: str | None = None
+    #: The same usage priced at the catalog (peak, list) price. Equal to ``settled_usd``
+    #: except for an off-peak call.
+    list_usd: float | None = None
 
     @property
     def charged_usd(self) -> float:
@@ -151,6 +157,9 @@ class Ledger:
                     if i2 is not None:
                         i2.settled_usd = float(r["usd"])
                         i2.flags = [str(f) for f in r.get("flags", [])]
+                        i2.period = str(r["period"]) if r.get("period") else None
+                        lu = r.get("list_usd")
+                        i2.list_usd = float(lu) if lu is not None else i2.settled_usd
                 else:
                     bad += 1
             except (KeyError, TypeError, ValueError):
@@ -182,23 +191,36 @@ class Ledger:
             self.intents[i.id] = i
         return i
 
-    def settle(self, intent: Intent, usd: float, flags: Iterable[str] = ()) -> None:
-        """Record the realised cost of an intended call."""
+    def settle(
+        self,
+        intent: Intent,
+        usd: float,
+        flags: Iterable[str] = (),
+        *,
+        period: str | None = None,
+        list_usd: float | None = None,
+    ) -> None:
+        """Record the realised cost of an intended call: ``usd`` is what is billed (the price
+        of the call's ``period``); ``list_usd`` the same usage at the catalog's peak price."""
         fl = sorted(set(flags))
-        append_durable(
-            self.path,
-            {
-                "v": LEDGER_VERSION,
-                "kind": "settle",
-                "id": intent.id,
-                "ts": self._clock(),
-                "usd": float(usd),
-                "flags": fl,
-            },
-        )
+        rec: dict[str, Any] = {
+            "v": LEDGER_VERSION,
+            "kind": "settle",
+            "id": intent.id,
+            "ts": self._clock(),
+            "usd": float(usd),
+            "flags": fl,
+        }
+        if period is not None:
+            rec["period"] = period
+        if list_usd is not None:
+            rec["list_usd"] = float(list_usd)
+        append_durable(self.path, rec)
         with self._lock:
             intent.settled_usd = float(usd)
             intent.flags = fl
+            intent.period = period
+            intent.list_usd = float(usd) if list_usd is None else float(list_usd)
 
     # --- reading ---
 
@@ -212,6 +234,24 @@ class Ledger:
                 if i.provider == provider and i.month == m
             )
 
+    def spent_total(self, provider: str) -> float:
+        """All-time spend of ``provider`` in this ledger, every month."""
+        with self._lock:
+            return sum(i.charged_usd for i in self.intents.values() if i.provider == provider)
+
+    def by_period(self) -> dict[tuple[str, str], tuple[float, float]]:
+        """``(provider, period) -> (billed, at list price)`` over settled calls. Lines written
+        before periods were recorded count as ``unknown``."""
+        out: dict[tuple[str, str], tuple[float, float]] = {}
+        with self._lock:
+            for i in self.intents.values():
+                if i.settled_usd is None:
+                    continue
+                key = (i.provider, i.period or "unknown")
+                b, lst = out.get(key, (0.0, 0.0))
+                out[key] = (b + i.settled_usd, lst + (i.list_usd or i.settled_usd))
+        return out
+
     def by_month(self) -> dict[tuple[str, str], float]:
         out: dict[tuple[str, str], float] = {}
         with self._lock:
@@ -224,6 +264,16 @@ class Ledger:
         with self._lock:
             return sum(i.charged_usd for i in self.intents.values() if i.run_id == run_id)
 
+    def run_list(self, run_id: str) -> float:
+        """A run's spend with every call at the catalog's peak (list) price; an open intent
+        counts at its worst case, as in ``run_spent``."""
+        with self._lock:
+            return sum(
+                i.charged_usd if i.list_usd is None else i.list_usd
+                for i in self.intents.values()
+                if i.run_id == run_id
+            )
+
     def open_intents(self) -> list[Intent]:
         """Intents never settled (a crash or kill during the call): charged at worst case."""
         with self._lock:
@@ -235,22 +285,33 @@ class Ledger:
 
 
 class CapExceeded(Exception):
-    """Starting the run could pass a monthly cap."""
+    """Starting the run could pass a monthly cap or a total budget."""
 
 
 class CapGuard:
-    """Admits a run only if month-to-date spend, plus what every run in flight could still
-    spend, plus this run's worst-case bound fits under the provider's monthly cap.
+    """Admits a run only if spend so far, plus what every run in flight could still spend,
+    plus this run's reservation fits under the provider's monthly cap (month-to-date spend)
+    and under its total budget (all-time spend in this ledger), when it has one.
 
     The check runs under one lock, so parallel runs can never jointly pass a cap: each
-    admitted run holds a reservation of ``bound - spent so far`` until it ends.
+    admitted run holds a reservation of ``reservation - spent so far`` until it ends.
+
+    ``admit(..., least=x)``: when the full ``bound`` does not fit but at least ``x`` does, the
+    run is admitted with a reservation of exactly the headroom left (a reduced budget). The
+    caller must then stop the run early enough that it cannot spend more than that.
     """
 
-    def __init__(self, ledger: Ledger, caps: Mapping[str, float]) -> None:
+    def __init__(
+        self,
+        ledger: Ledger,
+        caps: Mapping[str, float],
+        totals: Mapping[str, float] | None = None,
+    ) -> None:
         self.ledger = ledger
         self.caps = dict(caps)
+        self.totals = dict(totals or {})
         self._lock = threading.Lock()
-        self._held: dict[str, tuple[str, float]] = {}  # run_id -> (provider, bound)
+        self._held: dict[str, tuple[str, float]] = {}  # run_id -> (provider, reservation)
 
     def _outstanding(self, provider: str) -> float:
         total = 0.0
@@ -259,25 +320,46 @@ class CapGuard:
                 total += max(0.0, bound - self.ledger.run_spent(run_id))
         return total
 
+    def _limits(self, provider: str) -> list[tuple[str, float, float]]:
+        """``(what, limit, spent)`` for the total budget, if set, and the monthly cap (on a tie
+        the total is named: it is the one that does not reset)."""
+        out = []
+        if provider in self.totals:
+            out.append(("all-time", self.totals[provider], self.ledger.spent_total(provider)))
+        out.append(("month-to-date", self.caps[provider], self.ledger.spent(provider)))
+        return out
+
     def headroom(self, provider: str) -> float:
         with self._lock:
-            cap = self.caps[provider]
-            return cap - self.ledger.spent(provider) - self._outstanding(provider)
-
-    def admit(self, provider: str, run_id: str, bound: float) -> None:
-        """Reserve ``bound`` for ``run_id`` or raise ``CapExceeded``."""
-        with self._lock:
-            cap = self.caps.get(provider)
-            if cap is None:
-                raise CapExceeded(f"no monthly cap is configured for paid provider {provider!r}")
-            used = self.ledger.spent(provider)
             held = self._outstanding(provider)
-            if used + held + bound > cap:
-                raise CapExceeded(
-                    f"{provider}: month-to-date ${used:.4f} + in flight ${held:.4f} + this run's "
-                    f"bound ${bound:.4f} would pass the ${cap:g} monthly cap"
-                )
-            self._held[run_id] = (provider, bound)
+            return min(lim - used for _, lim, used in self._limits(provider)) - held
+
+    def admit(
+        self, provider: str, run_id: str, bound: float, *, least: float | None = None
+    ) -> float:
+        """Reserve ``bound`` for ``run_id`` (or, with ``least``, the headroom left when that is
+        at least ``least``) and return the reservation; otherwise raise ``CapExceeded``."""
+        with self._lock:
+            if self.caps.get(provider) is None:
+                raise CapExceeded(f"no monthly cap is configured for paid provider {provider!r}")
+            held = self._outstanding(provider)
+            limits = self._limits(provider)
+            room = min(lim - used for _, lim, used in limits) - held
+            grant = bound
+            if bound > room:
+                if least is not None and room >= least:
+                    grant = room
+                else:
+                    what, lim, used = min(limits, key=lambda x: x[1] - x[2])
+                    kind = "monthly cap" if what == "month-to-date" else "total budget"
+                    need = bound if least is None else least
+                    raise CapExceeded(
+                        f"{provider}: {what} ${used:.4f} + in flight ${held:.4f} + this run's "
+                        f"{'bound' if least is None else 'smallest budget'} ${need:.4f} would "
+                        f"pass the ${lim:g} {kind}"
+                    )
+            self._held[run_id] = (provider, grant)
+            return grant
 
     def release(self, run_id: str) -> None:
         with self._lock:

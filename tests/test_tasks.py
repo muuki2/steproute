@@ -535,6 +535,17 @@ def test_cli_list_and_estimate(capsys: pytest.CaptureFixture[str]) -> None:
     assert "anthropic" in out and "claude-fable-5-2" in out
 
 
+def test_estimate_shows_deepseek_off_peak_against_its_10_dollar_total(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["tasks", "estimate", "--plan", "pilot"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    i = next(n for n, x in enumerate(lines) if x.strip().startswith("deepseek"))
+    assert "$18" in lines[i] and "at peak (list) prices" in lines[i]
+    assert "$8.79" in lines[i + 1] and "scheduled off-peak" in lines[i + 1]
+    assert "central fits in the $10 total" in lines[i + 1]
+
+
 def test_cli_swebench_check_needs_rows(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(
         [
