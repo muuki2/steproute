@@ -169,6 +169,16 @@ Ollama profiles have `price_in = price_out = 0`, so their money cost is 0. To ch
 
 When the realized token counts equal the planned ones, `realized_cost` equals the first attempt's `total_usd`, because both call `price_usage`.
 
+## Time of day
+
+Some providers charge less outside peak hours (DeepSeek: half, for cache misses, cache hits and output). The hours are catalog data (`meta.peak_hours`, `docs/CATALOG.md`), read by `src/steproute/core/offpeak.py` (standard library only):
+
+- `offpeak_profile(profile)` is the same profile with the off-peak prices from `meta`; `None` for a flat-priced model. Pricing is still `price_usage`, with that profile.
+- `call_period(hours, start, end)` is `offpeak` only if the call's start and end are both off-peak and no peak window lies between them; otherwise `peak`; `flat` without hours. DeepSeek does not document how a call crossing a boundary is billed, so the boundary case is priced at peak.
+- Public holidays the provider treats as off-peak (DeepSeek: Chinese public holidays) are treated as ordinary days: the discount is never assumed on a day we cannot verify.
+
+Who uses it: the replay runner prices each DeepSeek call by its period and records both the billed cost and the same usage at peak (list) price; its reservations and worst cases stay at peak. `steproute tasks estimate` and the replay dry run show DeepSeek at both prices. The router's `expected_cost` does not use time of day: a routing decision is priced at the catalog (peak) price.
+
 ## Errors
 
 `CostModelError` (a `ValueError`) is raised for:
@@ -401,7 +411,7 @@ stay.latency_ms = 21200.0
 - **Cache writes are assumed to cover the whole prompt**, meaning a breakpoint at the end of the prompt. This is the usual agent-harness setup, and the proxy places one there on Anthropic requests it rewrites (Anthropic's automatic breakpoint, `docs/PROXY.md` decision 10); it is not verified per harness. A harness that caches only a fixed prefix pays less than predicted for the write, and has less cached afterwards.
 - **Cache expiry is not modelled.** The collector must set `cached_prefix_tokens = 0` once the TTL (5 minutes on Anthropic, best effort on DeepSeek, `keep_alive` on Ollama) may have passed.
 - **Only the 5-minute Anthropic write is priced.** A collector that uses the 1-hour TTL must price with a profile whose `cache_write_mult` is 2.0 (`meta.cache_write_1h_mult`).
-- **DeepSeek is priced at peak rates.** Off-peak requests cost half, so `realized_cost` overstates them unless the collector passes an off-peak profile (prices in `meta`).
+- **DeepSeek is priced at peak rates by default.** Off-peak requests cost half, so `realized_cost` overstates them unless the caller passes the off-peak profile (see "Time of day"). The replay runner does; the proxy and the router do not, so a DeepSeek trace's `Outcome.cost_usd` is at peak (list) price even for an off-peak call.
 - **DeepSeek cache scope and the effect of toggling thinking are undocumented.** The conservative default `effort_change_keeps_cache = false` treats an effort change as a miss. Its minimum cacheable length is unknown, so it is 0.
 - **Partial-prefix minimums.** `cache_min_tokens` is compared with the whole prompt. The finer Anthropic rule (a minimum per breakpoint) is not modelled.
 - **Cost is not monotone in prompt length at the cache minimum.** Crossing 512 tokens turns on caching, which can make a cascade's second step cheaper. This matches the provider's behaviour.
