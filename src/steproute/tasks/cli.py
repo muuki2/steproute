@@ -8,7 +8,8 @@ import shlex
 import sys
 from pathlib import Path
 
-from steproute.core.catalog import CatalogError, load_catalog, load_default_catalog
+from steproute.core.catalog import Catalog, CatalogError, load_catalog, load_default_catalog
+from steproute.core.offpeak import offpeak_profile
 from steproute.tasks.check import (
     BASELINE_PATCH,
     DEFAULT_ROWS,
@@ -38,7 +39,9 @@ from steproute.tasks.manifest import (
 
 __all__ = ["add_tasks"]
 
-MONTHLY_CAP = {"anthropic": 80.0, "deepseek": 20.0}  # decision D3 (DeepSeek: pilot cap)
+MONTHLY_CAP = {"anthropic": 80.0, "deepseek": 10.0}  # decision D3 (DeepSeek: $10 in total)
+#: Providers funded once, not monthly (maintainer decision, 13 Nov 2026), and run off-peak only.
+TOTAL_BUDGET = {"deepseek": 10.0}
 
 
 def add_tasks(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -177,18 +180,37 @@ def _estimate(args: argparse.Namespace) -> int:
         return 2
     plans = build_plans(catalog, args.tasks, args.pilot_tasks)
     names = PLANS if args.plan == "all" else (args.plan,)
+    # The same catalog at off-peak prices, for providers that run only off-peak.
+    off_catalog = Catalog(tuple(offpeak_profile(m) or m for m in catalog.models))
     print("USD by provider: low / central / high; months at the monthly cap (D3)")
-    print("DeepSeek at peak prices; off-peak scheduling halves it.\n")
+    print(
+        "DeepSeek runs only off-peak (half price): its line is at peak (list) prices, the "
+        f"next line at the scheduled off-peak price, against its ${TOTAL_BUDGET['deepseek']:g} "
+        "total budget.\n"
+    )
     for name in names:
         est = estimate_plan(plans[name], catalog, assumptions, caching=not args.no_cache)
+        off = estimate_plan(plans[name], off_catalog, assumptions, caching=not args.no_cache)
         print(f"{name}: {est.plan.description}")
         for prov in sorted(est.usd):
             usd = est.usd[prov]
             cells = " / ".join(f"${usd[s]:,.0f}" for s in SCENARIOS)
             line = f"  {prov:10} {est.runs[prov]:5} runs  {cells}"
-            if prov in MONTHLY_CAP:
+            if prov in TOTAL_BUDGET:
+                line += "  at peak (list) prices"
+            elif prov in MONTHLY_CAP:
                 months = [months_needed(usd[s], MONTHLY_CAP[prov]) for s in SCENARIOS]
                 line += f"  months {months[0]} / {months[1]} / {months[2]}"
+            if prov in TOTAL_BUDGET:
+                o = off.usd[prov]
+                budget = TOTAL_BUDGET[prov]
+                fits = "fits" if o["central"] <= budget else "does NOT fit"
+                print(line)
+                line = (
+                    f"  {'':10} {'':5}       "
+                    + " / ".join(f"${o[s]:,.2f}" for s in SCENARIOS)
+                    + f"  scheduled off-peak; central {fits} in the ${budget:g} total"
+                )
             hours = est.hours[prov]
             if prov == "ollama":
                 line += f"  ({hours['central']:,.0f} h of local compute, central)"
