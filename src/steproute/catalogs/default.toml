@@ -147,6 +147,19 @@ open_cache_questions = "cache scope per model and the effect of toggling thinkin
 source = "https://api-docs.deepseek.com/quick_start/pricing"
 checked = "2026-11-13"
 
+# Peak hours as data (src/steproute/core/offpeak.py): price_in/price_out above apply inside
+# these windows, price_*_offpeak outside them. Chinese public holidays are off-peak at
+# DeepSeek; we cannot verify that calendar here, so they are treated as ordinary weekdays.
+[model.meta.peak_hours]
+timezone = "UTC"
+windows = [
+  { days = ["mon", "tue", "wed", "thu", "fri"], start = "01:00", end = "04:00" },
+  { days = ["mon", "tue", "wed", "thu", "fri"], start = "06:00", end = "10:00" },
+]
+source = "https://api-docs.deepseek.com/quick_start/pricing"
+checked = "2026-11-13"
+note = "Chinese public holidays treated as weekdays (not verified); boundary-crossing calls priced at peak (billing rule not documented)"
+
 [[model]]
 id = "deepseek-v4-pro"
 provider = "deepseek"
@@ -173,6 +186,19 @@ offpeak_note = "peak 01:00-04:00 and 06:00-10:00 UTC Mon-Fri; off-peak is half"
 open_cache_questions = "cache scope per model and the effect of toggling thinking are not documented"
 source = "https://api-docs.deepseek.com/quick_start/pricing"
 checked = "2026-11-13"
+
+# Peak hours as data (src/steproute/core/offpeak.py): price_in/price_out above apply inside
+# these windows, price_*_offpeak outside them. Chinese public holidays are off-peak at
+# DeepSeek; we cannot verify that calendar here, so they are treated as ordinary weekdays.
+[model.meta.peak_hours]
+timezone = "UTC"
+windows = [
+  { days = ["mon", "tue", "wed", "thu", "fri"], start = "01:00", end = "04:00" },
+  { days = ["mon", "tue", "wed", "thu", "fri"], start = "06:00", end = "10:00" },
+]
+source = "https://api-docs.deepseek.com/quick_start/pricing"
+checked = "2026-11-13"
+note = "Chinese public holidays treated as weekdays (not verified); boundary-crossing calls priced at peak (billing rule not documented)"
 
 # --- Ollama (local, price 0, context capped at 32768 per decision D2) ---
 
