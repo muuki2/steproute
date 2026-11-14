@@ -464,7 +464,7 @@ Replacements are the first candidate in the seeded order (section 2, "Broken tas
 
 Money, or more time on the machine than issue 56 had:
 
-- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do (section 8.3 for the replacement of `psf__requests-1921`). Besides them, the other 6 `psf/requests` tasks were checked (5 of those 7 images are broken, including `-1921`), and the 4 replacements; the other 124 images were checked on 14 Nov 2026 (issue 64, section 8.4): 121 grade correctly, 3 fail their gold patch and are to re-check.
+- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do (section 8.3 for the replacement of `psf__requests-1921`). Besides them, the other 6 `psf/requests` tasks were checked (5 of those 7 images are broken, including `-1921`), and the 4 replacements; the other 124 images were checked on 14 Nov 2026 (issue 64, section 8.4): 121 grade correctly, 3 fail their gold patch twice and are broken, not yet replaced.
 - **Disk for all 150 images.** Extrapolating the pilot: about 75 GB in Docker's store (0.75 GB per image after sharing), well within the VM's 900 GB. The pre-flight's free-disk line measures the host disk at the output directory, not the Docker VM's disk.
 - **Every per-run cost number for the 5.5 and 5.2 Claude models and the current DeepSeek models.** These are derived from older analogs and must be measured in the pilot.
 - **That prompt caching works end to end against the live Anthropic API** through the proxy (sensitivity 1 above). The proxy's breakpoints are tested against a mock only.
@@ -472,7 +472,7 @@ Money, or more time on the machine than issue 56 had:
 
 ### 8.4 The other 124 images (issue 64, 14 Nov 2026)
 
-All 124 tasks that were not yet checked were pulled (78 official from Docker Hub with `docker pull`, 46 Epoch from GHCR with `scripts/fetch_ghcr_image.py`) and checked with `scripts/validate_images.py`: `steproute tasks check --patch gold` must end `passed` and `--patch baseline` must end `failed`. **121 of 124 grade correctly.** Three fail their gold patch and are **to re-check** (the results file keeps only the status `not resolved`; the failing tests are not recorded yet, and the replacement rule of section 2 applies once they are read): `matplotlib__matplotlib-20826`, `matplotlib__matplotlib-20859`, `sphinx-doc__sphinx-10435`. No replacement has been made, so those three still sit in the manifest as unchecked-good. Together with the 26 checked before, 147 of the 150 tasks are verified and 3 are open. The driver's wall time was about 2 h of checks. Docker's image store afterwards: 201 images, 101.8 GB (`docker system df`, including images from before this work).
+All 124 tasks that were not yet checked were pulled (78 official from Docker Hub with `docker pull`, 46 Epoch from GHCR with `scripts/fetch_ghcr_image.py`) and checked with `scripts/validate_images.py`: `steproute tasks check --patch gold` must end `passed` and `--patch baseline` must end `failed`. **121 of 124 grade correctly.** Three fail their gold patch and are broken (reasons below): `matplotlib__matplotlib-20826`, `matplotlib__matplotlib-20859`, `sphinx-doc__sphinx-10435`. A second gold run on 14 Nov 2026 failed the same way, so the three are really broken, not transient: `matplotlib__matplotlib-20826` (3 of 673 PASS_TO_PASS tests fail: `test_imshow_clip[png]`, `test_imshow_clip[pdf]`, `test_contour_colorbar[png]`, with pandas "Multi-dimensional indexing (e.g. `obj[:, None]`) is no longer supported"), `matplotlib__matplotlib-20859` (1 of 88 PASS_TO_PASS tests fails: `test_legend.py::test_warn_big_data_best_loc`, "DID NOT WARN") and `sphinx-doc__sphinx-10435` (the FAIL_TO_PASS test `tests/test_build_latex.py::test_latex_code_role` fails on its LaTeX output assertion). They are **not yet replaced**: adding them to `BROKEN` and regenerating moves tasks that were already checked, including a pilot task (`django__django-13401`, replacement for `psf__requests-1921`), because the replacement draw is order dependent. The maintainer has to decide how to handle that. Together with the 26 checked before, 147 of the 150 tasks are verified and 3 are open. The driver's wall time was about 2 h of checks. Docker's image store afterwards: 201 images, 101.8 GB (`docker system df`, including images from before this work).
 
 The raw results are in `docs/taskset-checks.jsonl` (one line per task, with image, source, statuses, seconds). Regenerate this table from it.
 
@@ -537,8 +537,8 @@ The raw results are in `docs/taskset-checks.jsonl` (one line per task, with imag
 | `matplotlib__matplotlib-14623` | Epoch | passed | failed | 54 / 53 |
 | `matplotlib__matplotlib-20488` | Epoch | passed | failed | 30 / 29 |
 | `matplotlib__matplotlib-20676` | official | passed | failed | 26 / 26 |
-| `matplotlib__matplotlib-20826` | Epoch | failed **TO RE-CHECK** | failed | 57 / 56 |
-| `matplotlib__matplotlib-20859` | official | failed **TO RE-CHECK** | failed | 30 / 30 |
+| `matplotlib__matplotlib-20826` | Epoch | failed **BROKEN (to replace)** | failed | 57 / 56 |
+| `matplotlib__matplotlib-20859` | official | failed **BROKEN (to replace)** | failed | 30 / 30 |
 | `matplotlib__matplotlib-21568` | Epoch | passed | failed | 25 / 25 |
 | `mwaskom__seaborn-3069` | official | passed | failed | 30 / 29 |
 | `mwaskom__seaborn-3187` | Epoch | passed | failed | 40 / 39 |
@@ -558,7 +558,7 @@ The raw results are in `docs/taskset-checks.jsonl` (one line per task, with imag
 | `scikit-learn__scikit-learn-25931` | Epoch | passed | failed | 25 / 24 |
 | `scikit-learn__scikit-learn-25973` | official | passed | failed | 24 / 24 |
 | `scikit-learn__scikit-learn-26194` | Epoch | passed | failed | 23 / 23 |
-| `sphinx-doc__sphinx-10435` | official | failed **TO RE-CHECK** | failed | 27 / 25 |
+| `sphinx-doc__sphinx-10435` | official | failed **BROKEN (to replace)** | failed | 27 / 25 |
 | `sphinx-doc__sphinx-10466` | official | passed | failed | 22 / 23 |
 | `sphinx-doc__sphinx-10673` | Epoch | passed | failed | 21 / 22 |
 | `sphinx-doc__sphinx-11445` | official | passed | failed | 23 / 24 |
