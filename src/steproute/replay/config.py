@@ -36,8 +36,9 @@ __all__ = [
 #: Monthly caps in USD per provider (decision D3). Raising one needs ``allow_raise = true``.
 #: DeepSeek: $10, the whole of its funding (maintainer decision, 13 Nov 2026).
 DEFAULT_CAPS: Mapping[str, float] = {"anthropic": 80.0, "deepseek": 10.0}
-#: Total (all-time) budgets in USD per provider, over every month of one ledger. A provider
-#: without one has only its monthly cap. DeepSeek was funded once with $10.
+#: Total (all-time) budgets in USD per provider, over every month of the shared spend ledger
+#: (every output directory). A provider without one has only its monthly cap. DeepSeek was
+#: funded once with $10.
 DEFAULT_TOTALS: Mapping[str, float] = {"deepseek": 10.0}
 #: Providers that run on this machine and cost nothing.
 LOCAL_PROVIDERS = ("ollama",)
