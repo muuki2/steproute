@@ -36,8 +36,9 @@ __all__ = [
 #: Monthly caps in USD per provider (decision D3). Raising one needs ``allow_raise = true``.
 #: DeepSeek: $10, the whole of its funding (maintainer decision, 13 Nov 2026).
 DEFAULT_CAPS: Mapping[str, float] = {"anthropic": 80.0, "deepseek": 10.0}
-#: Total (all-time) budgets in USD per provider, over every month of one ledger. A provider
-#: without one has only its monthly cap. DeepSeek was funded once with $10.
+#: Total (all-time) budgets in USD per provider, over every month of the shared spend ledger
+#: (every output directory). A provider without one has only its monthly cap. DeepSeek was
+#: funded once with $10.
 DEFAULT_TOTALS: Mapping[str, float] = {"deepseek": 10.0}
 #: Providers that run on this machine and cost nothing.
 LOCAL_PROVIDERS = ("ollama",)
@@ -129,6 +130,9 @@ class ReplayConfig:
     catalog_path: Path | None = None
     #: Unload the previous Ollama model before loading the next (``keep_alive = 0``).
     manage_ollama: bool = True
+    #: ``[ledger] path``: the shared spend ledger. ``None``: ``$STEPROUTE_LEDGER``, else the
+    #: per-user state directory (``steproute.replay.ledger.resolve_ledger_path``).
+    ledger_path: Path | None = None
     path: Path | None = None
 
     def provider(self, name: str) -> ProviderConfig:
@@ -255,6 +259,7 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         "environment",
         "check",
         "catalog",
+        "ledger",
     }
     unknown = sorted(set(data) - known)
     if unknown:
@@ -339,6 +344,15 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         raise ReplayConfigError("[catalog] takes only path")
     cat_p = (base / _value("[catalog] path", cat["path"], "str")).resolve() if cat else None
 
+    led = _table(data, "ledger")
+    if sorted(set(led) - {"path"}):
+        raise ReplayConfigError("[ledger] takes only path")
+    led_p = (
+        (base / Path(_value("[ledger] path", led["path"], "str")).expanduser()).absolute()
+        if "path" in led
+        else None
+    )
+
     return ReplayConfig(
         caps=caps,
         totals=totals,
@@ -352,6 +366,7 @@ def parse_replay_config(data: Mapping[str, Any], *, base: Path | None = None) ->
         rows=rows_p,
         catalog_path=cat_p,
         manage_ollama=manage,
+        ledger_path=led_p,
     )
 
 

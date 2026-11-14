@@ -1,4 +1,6 @@
-"""``steproute replay``: plan, preflight, run, resume, status, report. See ``docs/REPLAY.md``.
+"""``steproute replay``: plan, preflight, run, resume, status, report, and ``ledger`` (show
+the shared spend ledger, import an output directory's ledger into it). See
+``docs/REPLAY.md``.
 
 Every command is a dry run unless it is ``run`` or ``resume`` with ``--execute``.
 """
@@ -41,7 +43,16 @@ def add_replay(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     )
     rsub = rp.add_subparsers(dest="replay_command", metavar="<subcommand>", required=True)
 
-    def common(p: argparse.ArgumentParser, *, plan: bool = True) -> None:
+    def ledger_arg(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--ledger",
+            type=Path,
+            help="the shared spend ledger (default: [ledger] path in the config, else "
+            "$STEPROUTE_LEDGER, else $XDG_STATE_HOME/steproute/ledger.jsonl or "
+            "~/.local/state/steproute/ledger.jsonl)",
+        )
+
+    def common(p: argparse.ArgumentParser, *, plan: bool = True, out: bool = True) -> None:
         if plan:
             p.add_argument(
                 "--plan", required=True, help=f"{' or '.join(NAMED_PLANS)}, or a plan TOML file"
@@ -51,7 +62,9 @@ def add_replay(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
             )
             p.add_argument("--assumptions", type=Path, help="cost assumptions (default: built-in)")
         p.add_argument("--config", type=Path, help="replay TOML (default: safe built-in defaults)")
-        p.add_argument("--out", type=Path, required=True, help="output directory of the run")
+        if out:
+            p.add_argument("--out", type=Path, required=True, help="output directory of the run")
+        ledger_arg(p)
 
     p = rsub.add_parser("plan", help="Print the plan, estimated spend, caps and month-to-date.")
     common(p)
@@ -93,6 +106,21 @@ def add_replay(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         "--md", type=Path, default=Path("docs/results/pilot.md"), help="where to write the report"
     )
     p.set_defaults(func=_report)
+
+    lp = rsub.add_parser("ledger", help="The shared spend ledger: show it, import into it.")
+    lsub = lp.add_subparsers(dest="ledger_command", metavar="<subcommand>", required=True)
+    p = lsub.add_parser(
+        "show", help="Where the ledger is, spend per provider and directory, reservations held."
+    )
+    common(p, plan=False, out=False)
+    p.set_defaults(func=_ledger_show)
+    p = lsub.add_parser(
+        "import",
+        help="Bring an output directory's ledger.jsonl into the shared ledger (once; "
+        "running it again adds nothing).",
+    )
+    common(p, plan=False)
+    p.set_defaults(func=_ledger_import)
 
 
 def _err(msg: str) -> int:
@@ -154,13 +182,14 @@ def _runner(args: argparse.Namespace) -> Any:
         manifest=manifest,
         out=args.out,
         inputs=_inputs(args),
-        deps=RunnerDeps(secrets=secrets),
+        deps=RunnerDeps(secrets=secrets, ledger_path=args.ledger),
     )
 
 
 def _guard(fn: Any, args: argparse.Namespace) -> int:
     from steproute.replay.envfile import EnvFileError
     from steproute.replay.journal import LockHeld
+    from steproute.replay.ledger import UnknownSpend
     from steproute.replay.runner import MissingKey
 
     try:
@@ -171,7 +200,7 @@ def _guard(fn: Any, args: argparse.Namespace) -> int:
         return _err(str(exc))
     except MissingKey:
         return 2
-    except LockHeld as exc:
+    except (LockHeld, UnknownSpend) as exc:
         return _err(str(exc))
 
 
@@ -214,7 +243,10 @@ def _preflight(args: argparse.Namespace) -> int:
         _env(a)
         config, catalog, manifest = _load(a)
         plan = _build_plan(a.plan, manifest, catalog, a.assumptions)
-        checks = preflight(plan, manifest, config, environ=os.environ, out=a.out)
+        ledger, _ = _shared(a)
+        checks = preflight(
+            plan, manifest, config, environ=os.environ, out=a.out, ledger_path=ledger
+        )
         bad = 0
         for c in checks:
             mark = "ok  " if c.ok else ("FAIL" if c.required else "note")
@@ -224,6 +256,17 @@ def _preflight(args: argparse.Namespace) -> int:
         return 0 if not bad else 1
 
     return _guard(go, args)
+
+
+def _shared(args: argparse.Namespace) -> tuple[Path, str]:
+    import os
+
+    from steproute.replay.ledger import resolve_ledger_path
+
+    config = load_replay_config(args.config)
+    return resolve_ledger_path(
+        explicit=args.ledger, configured=config.ledger_path, environ=os.environ
+    )
 
 
 def _status(args: argparse.Namespace) -> int:
@@ -240,10 +283,96 @@ def _status(args: argparse.Namespace) -> int:
         print(f"attempts: {len(j.attempts)}; cells finished: {sum(1 for _ in j.finished())}")
         for k, v in sorted(counts.items()):
             print(f"  {k:<18} {v}")
+        print("this directory:")
         for (prov, month), usd in sorted(led.by_month().items()):
             print(f"spend {prov:<10} {month}  ${usd:,.4f}")
         if led.open_intents():
             print(f"{len(led.open_intents())} unsettled call(s) charged at worst case")
+        path, source = _shared(a)
+        print(f"shared ledger {path} ({source}), every directory:")
+        if not path.exists():
+            print("  not created yet")
+            if led.intents:
+                print(
+                    f"  this directory's {len(led.intents)} call(s) are not in it: "
+                    f"steproute replay ledger import --out {a.out}"
+                )
+            return 0
+        shared = Ledger(path)
+        for (prov, month), usd in sorted(shared.by_month().items()):
+            print(f"spend {prov:<10} {month}  ${usd:,.4f}")
+        unknown = shared.unknown_spend(a.out / "ledger.jsonl")
+        if unknown:
+            print(
+                f"  this directory has {len(unknown)} call(s) the shared ledger does not know; "
+                f"a real run refuses to start until: steproute replay ledger import --out {a.out}"
+            )
+        return 0
+
+    return _guard(go, args)
+
+
+def _ledger_show(args: argparse.Namespace) -> int:
+    from steproute.replay.ledger import Ledger
+
+    def go(a: argparse.Namespace) -> int:
+        path, source = _shared(a)
+        print(f"shared ledger: {path} ({source})")
+        if not path.exists():
+            print("not created yet: nothing has been spent through it")
+            return 0
+        led = Ledger(path)
+        totals: dict[str, float] = {}
+        for (prov, month), usd in sorted(led.by_month().items()):
+            totals[prov] = totals.get(prov, 0.0) + usd
+            print(f"spend {prov:<10} {month}  ${usd:,.4f}")
+        for prov, usd in sorted(totals.items()):
+            print(f"spend {prov:<10} all time  ${usd:,.4f}")
+        for (out, prov), usd in sorted(led.by_out().items()):
+            print(f"  {prov:<10} ${usd:,.4f}  {out}")
+        if led.open_intents():
+            print(f"{len(led.open_intents())} unsettled call(s) charged at worst case")
+        for r in led.live_reservations():
+            state = led.owner_state(r.owner)
+            print(
+                f"reservation {r.run_id} {r.provider} ${r.usd:,.4f} held by a runner that is "
+                f"{state} ({r.out or 'no directory'})"
+            )
+        if led.skipped_lines:
+            print(f"{led.skipped_lines} unreadable line(s) skipped (torn writes)")
+        return 0
+
+    return _guard(go, args)
+
+
+def _ledger_import(args: argparse.Namespace) -> int:
+    from steproute.replay.journal import OutputLock
+    from steproute.replay.ledger import Ledger
+
+    def go(a: argparse.Namespace) -> int:
+        local = a.out / "ledger.jsonl"
+        if not local.exists():
+            raise ValueError(f"{local} does not exist; nothing to import")
+        path, source = _shared(a)
+        # The directory's lock: no runner may be writing its ledger while it is read.
+        with OutputLock(a.out):
+            led = Ledger(path)
+            res = led.import_from(local, out=a.out)
+        print(f"shared ledger: {path} ({source})")
+        print(
+            f"imported from {local}: {res.intents} call(s) and {res.settles} settlement(s); "
+            f"{res.already} line(s) were already there"
+        )
+        if res.orphans:
+            print(f"  {res.orphans} settlement(s) without their call were skipped")
+        if res.unreadable:
+            print(f"  {res.unreadable} unreadable line(s) skipped (torn writes)")
+        led.reload()
+        unknown = led.unknown_spend(local)
+        if unknown:
+            print(f"{len(unknown)} call(s) of {local} are still not in the shared ledger")
+            return 1
+        print("every call of the directory is in the shared ledger")
         return 0
 
     return _guard(go, args)

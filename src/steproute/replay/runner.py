@@ -5,11 +5,14 @@ What is safe by default:
 * ``execute=False`` (the default) prints the plan and touches nothing.
 * A real run takes the output directory's lock first; a second runner on it exits.
 * Every paid provider in the plan needs its key (DeepSeek explicitly) before anything runs.
-* Before each paid run, ``CapGuard.admit`` checks month-to-date spend (the ledger), plus what
-  runs in flight could still spend, plus this run's worst-case bound, against the monthly cap
-  and the provider's total budget. When less than a full bound is left (but at least
-  ``min_run_budget_usd`` plus one worst-case call), the run gets that smaller budget and ends
-  as ``budget_stop`` (pending, not a failure) if it reaches it.
+* Before each paid run, ``CapGuard.admit`` checks month-to-date spend (the shared ledger, every
+  output directory), plus what runs in flight in every runner could still spend, plus this
+  run's worst-case bound, against the monthly cap and the provider's total budget. When less
+  than a full bound is left (but at least ``min_run_budget_usd`` plus one worst-case call),
+  the run gets that smaller budget and ends as ``budget_stop`` (pending, not a failure) if it
+  reaches it.
+* A real run refuses to start when its output directory's ``ledger.jsonl`` holds spend the
+  shared ledger does not know (``steproute replay ledger import`` brings it in).
 * A provider with ``offpeak_only`` (DeepSeek by default) starts a run only when its off-peak
   hours stay open for the start margin, and its client never sends a call in peak hours.
 * Each run has its own proxy, session and nonce; the configuration that executed is checked
@@ -44,7 +47,14 @@ from steproute.eval.data import GridRun, GridTask, write_grid
 from steproute.replay.agent import AgentResult, BashAgent, RunStopped, Scaffold
 from steproute.replay.config import ReplayConfig
 from steproute.replay.journal import DEFERRED, LABELLED, RETRYABLE, Attempt, Journal, OutputLock
-from steproute.replay.ledger import CapExceeded, CapGuard, Ledger, month_of
+from steproute.replay.ledger import (
+    CapExceeded,
+    CapGuard,
+    Ledger,
+    UnknownSpend,
+    month_of,
+    resolve_ledger_path,
+)
 from steproute.replay.plan import ReplayPlan, RunSpec
 from steproute.replay.proxyrun import (
     PAUSE_CHUNK_S,
@@ -153,6 +163,9 @@ class RunnerDeps:
     #: Values to scrub from everything the runner writes, besides the configured keys (every
     #: value loaded from ``--env-file``).
     secrets: Sequence[str] = ()
+    #: The shared spend ledger, over ``[ledger] path`` and ``$STEPROUTE_LEDGER`` (``--ledger``
+    #: on the command line; tests always set it).
+    ledger_path: Path | None = None
 
 
 def run_bound(spec: RunSpec, catalog: Catalog, config: ReplayConfig) -> float:
@@ -196,9 +209,11 @@ def describe_plan(
     journal: Journal | None,
     environ: Mapping[str, str],
     now: float,
+    ledger_note: str = "",
 ) -> str:
     """The plan, the estimated spend per provider with its range, the caps, month-to-date
-    spend and the key status (set or not set, never the value)."""
+    spend (from the shared ledger: every output directory) and the key status (set or not
+    set, never the value)."""
     done = {a.cell for a in journal.finished()} if journal else set()
     pending = [s for s in plan.specs if s.cell not in done]
     lines = [
@@ -220,6 +235,8 @@ def describe_plan(
             f"~{_fmt(est[0] * len(ss))} ({_fmt(est[1] * len(ss))}-{_fmt(est[2] * len(ss))})"
             f"{stage}{tag}"
         )
+    if ledger_note:
+        lines += ["", f"  spend ledger: {ledger_note}"]
     lines += ["", "  estimated spend of the runs to go (central, low-high) and caps:"]
     month = month_of(now)
     for prov in plan.providers():
@@ -237,7 +254,7 @@ def describe_plan(
         price = "at peak (list) prices" if offpeak else ""
         lines.append(
             f"   {prov:<10} {len(ss):4d} runs  ~{_fmt(c)} ({_fmt(lo)}-{_fmt(hi)}) {price}".rstrip()
-            + f"  cap {_fmt(cap)}/month, month-to-date {month} {_fmt(mtd)}, "
+            + f"  cap {_fmt(cap)}/month, month-to-date {month} {_fmt(mtd)} (all directories), "
             f"worst case per run {_fmt(bound)}"
         )
         room = cap - mtd
@@ -246,8 +263,8 @@ def describe_plan(
             all_time = ledger.spent_total(prov) if ledger else 0.0
             room = min(room, total - all_time)
             lines.append(
-                f"   {'':<10} total budget {_fmt(total)} (all months), spent so far "
-                f"{_fmt(all_time)}, left {_fmt(total - all_time)}"
+                f"   {'':<10} total budget {_fmt(total)} (all months, all directories), spent "
+                f"so far {_fmt(all_time)}, left {_fmt(total - all_time)}"
             )
         if offpeak:
             oc, olo, ohi = (sum((s.est_offpeak_usd or s.est_usd)[k] for s in ss) for k in range(3))
@@ -443,6 +460,10 @@ class Runner:
         self.guard: CapGuard | None = None
         self.stores: dict[str, TraceStore] = {}
         self._rows_cache: Mapping[str, Mapping[str, Any]] | None = None
+        # The location comes from the process environment, not ``deps.environ`` (the keys).
+        self.ledger_path, self.ledger_source = resolve_ledger_path(
+            explicit=self.deps.ledger_path, configured=config.ledger_path, environ=os.environ
+        )
 
     def say(self, text: str) -> None:
         print(self.redact(text), file=self.deps.out, flush=True)
@@ -495,10 +516,9 @@ class Runner:
         journal = (
             Journal.open(self.out / "runs.jsonl") if (self.out / "runs.jsonl").exists() else None
         )
+        # Read only: a dry run never creates the shared ledger.
         ledger = (
-            Ledger(self.out / "ledger.jsonl", clock=self.deps.clock)
-            if (self.out / "ledger.jsonl").exists()
-            else None
+            Ledger(self.ledger_path, clock=self.deps.clock) if self.ledger_path.exists() else None
         )
         missing = missing_keys(self.plan, self.config, self.deps.environ)
         text = describe_plan(
@@ -509,12 +529,17 @@ class Runner:
             journal=journal,
             environ=self.deps.environ,
             now=now,
+            ledger_note=f"{self.ledger_path} ({self.ledger_source})"
+            + ("" if ledger is not None else "; not created yet: nothing spent"),
         )
         if not execute:
             self.say(text)
             self.say("\nDRY RUN: nothing was run and nothing was spent. Add --execute to run.")
             for m in missing:
                 self.say(f"  a real run would stop here: {m}")
+            unknown = self._unknown_spend(ledger)
+            if unknown:
+                self.say(f"  a real run would stop here: {unknown}")
             return 0
         if missing:
             self.say(text)
@@ -532,14 +557,56 @@ class Runner:
             if self.config.cap(prov) is None:
                 raise MissingKey(f"paid provider {prov!r} has no monthly cap in [caps]")
         with OutputLock(self.out):
-            return self._run_locked(text)
+            self.ledger = Ledger(
+                self.ledger_path,
+                clock=self.deps.clock,
+                out=self.out,
+                mirror=self.out / "ledger.jsonl",
+            )
+            try:
+                return self._run_locked(text)
+            finally:
+                self.ledger.close()  # releases what this runner still holds
+
+    def _unknown_spend(self, ledger: Ledger | None) -> str:
+        """Why a real run must not start because of spend in this directory's own ledger that
+        the shared ledger does not hold; empty when there is none."""
+        local = self.out / "ledger.jsonl"
+        if not local.exists():
+            return ""
+        if ledger is None:
+            unknown = list(Ledger(local).intents.values())
+        else:
+            unknown = ledger.unknown_spend(local)
+        if not unknown:
+            return ""
+        usd = sum(i.charged_usd for i in unknown)
+        return (
+            f"{local} holds {len(unknown)} paid call(s) (${usd:,.4f}) that the shared ledger "
+            f"{self.ledger_path} does not know, so the caps would not count them. Bring them in "
+            f"first: steproute replay ledger import --out {self.out}"
+            + ("" if self.config.path is None else f" --config {self.config.path}")
+        )
 
     def _run_locked(self, text: str) -> int:
+        assert self.ledger is not None
+        with self.ledger.exclusive():
+            self.ledger.refresh()
+            unknown = self._unknown_spend(self.ledger)
+            if unknown:
+                self.say(f"replay: {unknown}")
+                raise UnknownSpend(unknown)
+            repaired = self.ledger.repair_mirror()
+        if repaired:
+            self.say(
+                f"ledger: {repaired} line(s) of this directory's runs were in the shared ledger "
+                "but not in its ledger.jsonl (a crash between the two writes); copied"
+            )
         self._check_plan_file()
-        self.ledger = Ledger(self.out / "ledger.jsonl", clock=self.deps.clock)
         # Always present after a real run: an empty ledger is the record that no paid call
         # was made (a local-only run used to leave no ledger at all).
-        self.ledger.path.touch(exist_ok=True)
+        self.out.mkdir(parents=True, exist_ok=True)
+        (self.out / "ledger.jsonl").touch(exist_ok=True)
         self.journal = Journal.open(self.out / "runs.jsonl")
         provs = self.plan.paid_providers()
         self.guard = CapGuard(
@@ -554,9 +621,12 @@ class Runner:
                 f"when the runner stopped; its ${spent.get(a.run_id, 0.0):.4f} is in the ledger, "
                 "and the cell is run again"
             )
-        if self.ledger.open_intents():
-            n = len(self.ledger.open_intents())
-            self.say(f"resume: {n} unsettled call(s) in the ledger are charged at their worst case")
+        mine = [i for i in self.ledger.open_intents() if i.out == self.ledger.out]
+        if mine:
+            self.say(
+                f"resume: {len(mine)} unsettled call(s) of this directory in the ledger are "
+                "charged at their worst case"
+            )
         if self.ledger.skipped_lines:
             self.say(
                 f"ledger: {self.ledger.skipped_lines} unreadable line(s) skipped (torn writes)"
@@ -621,9 +691,15 @@ class Runner:
             self.deps.local_models.unload_all()
         self.say(f"replay: wrote {pool} run(s) to grid.jsonl and {held} to grid-holdout.jsonl")
         if self.ledger is not None:
-            for (prov, month), usd in sorted(self.ledger.by_month().items()):
-                self.say(f"replay: ledger {prov} {month}: {_fmt(usd)}")
-            for (prov, period), (billed, listed) in sorted(self.ledger.by_period().items()):
+            self.ledger.refresh()
+            mine = Ledger(self.out / "ledger.jsonl")
+            for (prov, month), usd in sorted(mine.by_month().items()):
+                every = self.ledger.by_month().get((prov, month), 0.0)
+                self.say(
+                    f"replay: ledger {prov} {month}: {_fmt(usd)} in this directory, "
+                    f"{_fmt(every)} in all directories"
+                )
+            for (prov, period), (billed, listed) in sorted(mine.by_period().items()):
                 if period in ("peak", "offpeak"):
                     self.say(
                         f"replay: ledger {prov} {period} calls: billed {_fmt(billed)} "
@@ -683,6 +759,7 @@ class Runner:
             real += float((attempts[-1].end or {}).get("cost_usd") or 0.0)
             est += s.est_usd[0]
         remaining = sum(s.est_usd[0] for s in rest)
+        self.ledger.refresh()
         mtd = self.ledger.spent(gate.provider)
         r = real / est if est > 0 else None
         if unfinished or r is None:
@@ -799,7 +876,16 @@ class Runner:
             run_id = uuid.uuid4().hex[:16]
             try:
                 least = None if s.local else self.config.limits.min_run_budget_usd + wc
-                grant = self.guard.admit(s.provider, run_id, bound, least=least)
+                try:
+                    grant = self.guard.admit(s.provider, run_id, bound, least=least)
+                finally:
+                    while self.guard.reclaimed:
+                        r = self.guard.reclaimed.pop()
+                        self.say(
+                            f"ledger: released {r.provider} reservation {r.run_id} "
+                            f"({_fmt(r.usd)}) of a runner that ended without releasing it; its "
+                            "unsettled calls stay charged at their worst case"
+                        )
             except CapExceeded as exc:
                 if self._in_flight.get(s.provider, 0) > 0:
                     passed.add(s.provider)  # a run in flight may free its reservation

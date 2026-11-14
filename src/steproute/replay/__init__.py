@@ -5,7 +5,7 @@ See ``docs/REPLAY.md``. The modules:
 * ``config``: the strict TOML config, with the safe defaults (caps, per-run limits).
 * ``plan``: the named plans (``pilot``, ``sparse``) built from the manifest and the catalog,
   in cheapest-first order.
-* ``ledger``: the append-only spend ledger and the cap guard.
+* ``ledger``: the append-only spend ledger shared by every output directory, and the cap guard.
 * ``journal``: the run journal (resume) and the output-directory lock.
 * ``agent``: the bash agent scaffold; ``workspace``: where its commands run.
 * ``proxyrun``: one run's private proxy and the chat client that enforces every limit.
