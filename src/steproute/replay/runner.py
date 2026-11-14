@@ -145,6 +145,8 @@ class RunnerDeps:
     #: Test hook: replaces the run's ``FixedPolicy`` (to prove a mismatch is caught).
     policy: Callable[[RunSpec, Catalog], Policy] | None = None
     clock: Callable[[], float] = time.time
+    #: The timer each run measures its timeout and its pauses with.
+    monotonic: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     out: TextIO = field(default_factory=lambda: sys.stdout)
@@ -1065,6 +1067,7 @@ class Runner:
                     ),
                     ledger=self.ledger,
                     stop=self.stop,
+                    monotonic=self.deps.monotonic,
                     sleep=self.deps.sleep,
                     profile=self.catalog.get(spec.model),
                     hours=peak_hours(self.catalog.get(spec.model)),

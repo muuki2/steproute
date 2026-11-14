@@ -10,7 +10,6 @@ import io
 import json
 import re
 import threading
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -173,24 +172,17 @@ def test_a_run_reaching_peak_hours_pauses_and_the_pause_is_not_run_time(
     tmp_path: Path, mock: Any
 ) -> None:
     clock = FakeClock(ts(16, 0, 45))  # 15 min of off-peak left
-    real_pause = {"done": False}
-
-    def sleep(s: float) -> None:
-        if not real_pause["done"]:  # the pause takes real time too, longer than the timeout
-            real_pause["done"] = True
-            time.sleep(1.5)
-        clock.sleep(s)
-
     mock.set_responder(_timed(ScriptedAgent(extra_steps=6), clock, 120))
     plan, manifest = build(tmp_path, [FLASH], tasks=["add-a"])
-    limits = Limits(call_backoff_s=0.0, cache_canary_runs=0, run_timeout_s=1.0)
+    # The run's timer is the fake clock too, so nothing here depends on the machine's speed:
+    # the calls take about 16 fake minutes, the pause about 3 hours, the timeout is 1 hour.
+    limits = Limits(call_backoff_s=0.0, cache_canary_runs=0, run_timeout_s=3600.0)
     # start margin 0: the run starts at 00:45 and must meet the 01:00 boundary mid-run
     sched = {"deepseek": Schedule(offpeak_only=True, start_margin_s=0.0, call_margin_s=300.0)}
     cfg = config_for(mock, limits=limits, schedules=sched)
     out = tmp_path / "out"
     buf = io.StringIO()
-    r = _runner(plan, manifest, cfg, out, clock, stdout=buf)
-    r.deps.sleep = sleep
+    r = _runner(plan, manifest, cfg, out, clock, stdout=buf, monotonic=clock)
     assert r.run(execute=True) == 0
     assert "paused for deepseek peak hours until 2026-11-16 04:00 UTC" in buf.getvalue()
     intents, settles = _deepseek_lines(out)
@@ -201,7 +193,7 @@ def test_a_run_reaching_peak_hours_pauses_and_the_pause_is_not_run_time(
     run = load_grid(out / "grid.jsonl").runs[0]
     assert run.meta["status"] == "passed"  # not wall_time: the pause did not count
     end = next(iter(Journal.open(out / "runs.jsonl").attempts.values())).end or {}
-    assert end["paused_s"] >= 1.5
+    assert end["paused_s"] >= 3 * 3600  # from just before 01:00 to 04:00
 
 
 def test_a_call_crossing_into_peak_is_billed_at_peak(tmp_path: Path, mock: Any) -> None:
