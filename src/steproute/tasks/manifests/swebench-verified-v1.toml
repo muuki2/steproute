@@ -9,6 +9,9 @@
 # fits32k: our estimate that a short successful trajectory fits the 32K local context.
 # image: the native arm64 evaluation image (official swebench namespace where it exists,
 #   else Epoch AI's best-effort, untested build). Validate with the gold patch first.
+# broken: the task grades wrongly on its image (BROKEN in the script). Its record is
+#   kept, it is not part of the set (full_size and pilot_size count working tasks only)
+#   and no plan can include it. replaced_by: the task that took its place.
 
 [meta]
 name = "swebench-verified-v1"
@@ -269,6 +272,13 @@ pilot = false
 image = "ghcr.io/epoch-research/swe-bench.eval.arm64.django__django-13363:latest"
 
 [[task]]
+id = "django__django-13401"
+stratum = "hard"
+fits32k = true
+pilot = true
+image = "ghcr.io/epoch-research/swe-bench.eval.arm64.django__django-13401:latest"
+
+[[task]]
 id = "django__django-13410"
 stratum = "easy"
 fits32k = true
@@ -430,6 +440,13 @@ pilot = false
 image = "swebench/sweb.eval.arm64.django_1776_django-16100:latest"
 
 [[task]]
+id = "django__django-16139"
+stratum = "easy"
+fits32k = true
+pilot = false
+image = "swebench/sweb.eval.arm64.django_1776_django-16139:latest"
+
+[[task]]
 id = "django__django-16256"
 stratum = "hard"
 fits32k = false
@@ -533,13 +550,17 @@ stratum = "easy"
 fits32k = true
 pilot = false
 image = "swebench/sweb.eval.arm64.psf_1776_requests-1766:latest"
+broken = "the gold patch fails on the arm64 image: 3 of 91 tests fail (test_conflicting_post_params and test_POSTBIN_GET_POST_FILES_WITH_DATA on the image's pytest 8.3.4, test_mixed_case_scheme_acceptable with CERTIFICATE_VERIFY_FAILED)"
+replaced_by = "sympy__sympy-16450"
 
 [[task]]
 id = "psf__requests-1921"
 stratum = "hard"
 fits32k = true
-pilot = true
+pilot = false
 image = "swebench/sweb.eval.arm64.psf_1776_requests-1921:latest"
+broken = "the gold patch fails on the arm64 image: 3 of 107 PASS_TO_PASS tests fail (one on the image's pytest 8.3.4, two with CERTIFICATE_VERIFY_FAILED reaching httpbin.org)"
+replaced_by = "django__django-13401"
 
 [[task]]
 id = "psf__requests-2317"
@@ -547,6 +568,8 @@ stratum = "easy"
 fits32k = true
 pilot = false
 image = "swebench/sweb.eval.arm64.psf_1776_requests-2317:latest"
+broken = "the gold patch fails on the arm64 image: 9 of 143 tests fail (pytest 8.3.4 string raises, CERTIFICATE_VERIFY_FAILED, timeouts reaching httpbin.org); the run takes 4 minutes"
+replaced_by = "django__django-16139"
 
 [[task]]
 id = "psf__requests-2931"
@@ -554,6 +577,8 @@ stratum = "hard"
 fits32k = true
 pilot = false
 image = "swebench/sweb.eval.arm64.psf_1776_requests-2931:latest"
+broken = "the gold patch fails on the arm64 image: 2 tests fail and 81 error, because the pytest-httpbin 'httpbin' fixture is recursive on the image's pytest 8.3.4 and the timeout tests need the network"
+replaced_by = "sympy__sympy-15875"
 
 [[task]]
 id = "psf__requests-5414"
@@ -561,6 +586,8 @@ stratum = "medium"
 fits32k = false
 pilot = false
 image = "ghcr.io/epoch-research/swe-bench.eval.arm64.psf__requests-5414:latest"
+broken = "the gold patch fails on the arm64 image: 4 tests fail and 158 error, because the pytest-httpbin 'httpbin' fixture is recursive on the image's pytest 8.3.4 and the timeout tests need the network"
+replaced_by = "sympy__sympy-23950"
 
 [[task]]
 id = "psf__requests-6028"
@@ -962,6 +989,20 @@ pilot = true
 image = "swebench/sweb.eval.arm64.sympy_1776_sympy-15599:latest"
 
 [[task]]
+id = "sympy__sympy-15875"
+stratum = "hard"
+fits32k = true
+pilot = false
+image = "swebench/sweb.eval.arm64.sympy_1776_sympy-15875:latest"
+
+[[task]]
+id = "sympy__sympy-16450"
+stratum = "easy"
+fits32k = true
+pilot = false
+image = "swebench/sweb.eval.arm64.sympy_1776_sympy-16450:latest"
+
+[[task]]
 id = "sympy__sympy-16792"
 stratum = "medium"
 fits32k = false
@@ -1065,6 +1106,13 @@ stratum = "easy"
 fits32k = true
 pilot = false
 image = "swebench/sweb.eval.arm64.sympy_1776_sympy-23534:latest"
+
+[[task]]
+id = "sympy__sympy-23950"
+stratum = "medium"
+fits32k = true
+pilot = false
+image = "swebench/sweb.eval.arm64.sympy_1776_sympy-23950:latest"
 
 [[task]]
 id = "sympy__sympy-24562"

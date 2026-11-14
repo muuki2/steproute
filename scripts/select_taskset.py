@@ -27,6 +27,14 @@ Selection (docs/TASKSET.md, "How the subset is drawn"):
    repository's count (so django does not dominate), then sample with ``random.Random(SEED)``.
 4. The pilot is drawn from the full set, stratum by stratum, preferring tasks whose estimated
    context fits the 32K local cap for the easy and medium strata.
+5. Broken tasks (``BROKEN``, issue 58): a task whose gold patch fails on its arm64 image can
+   never be resolved. The draw of steps 3 and 4 is made first, exactly as before, so no other
+   task moves. Each drawn task listed in ``BROKEN`` is then replaced, taking its pilot slot if
+   it had one, by the first candidate of ``replacement_order``: same stratum, not drawn, not
+   broken, not from a repository whose tests reach the network (``NETWORK_REPOS``), in an order
+   fixed by ``random.Random(f"{SEED}:replace:{broken id}")``. A candidate that then fails its
+   own check (gold must pass, baseline must fail) is added to ``BROKEN`` and the next one is
+   taken. The manifest keeps a record of every broken task.
 """
 
 from __future__ import annotations
@@ -188,6 +196,36 @@ def image_name(iid: str, official: set[str]) -> str:
 
 EXCLUDED_REPOS = {"pylint-dev/pylint"}  # GPL-2.0
 
+# Tasks that grade wrongly on their arm64 image, found with `steproute tasks check` (gold patch
+# must pass, baseline patch must fail). Add an id here, with the reason, and regenerate.
+BROKEN: dict[str, str] = {
+    "psf__requests-1921": (
+        "the gold patch fails on the arm64 image: 3 of 107 PASS_TO_PASS tests fail (one on the "
+        "image's pytest 8.3.4, two with CERTIFICATE_VERIFY_FAILED reaching httpbin.org)"
+    ),
+    "psf__requests-1766": (
+        "the gold patch fails on the arm64 image: 3 of 91 tests fail (test_conflicting_post_params "
+        "and test_POSTBIN_GET_POST_FILES_WITH_DATA on the image's pytest 8.3.4, "
+        "test_mixed_case_scheme_acceptable with CERTIFICATE_VERIFY_FAILED)"
+    ),
+    "psf__requests-2317": (
+        "the gold patch fails on the arm64 image: 9 of 143 tests fail (pytest 8.3.4 string "
+        "raises, CERTIFICATE_VERIFY_FAILED, timeouts reaching httpbin.org); the run takes 4 minutes"
+    ),
+    "psf__requests-2931": (
+        "the gold patch fails on the arm64 image: 2 tests fail and 81 error, because the "
+        "pytest-httpbin 'httpbin' fixture is recursive on the image's pytest 8.3.4 and the "
+        "timeout tests need the network"
+    ),
+    "psf__requests-5414": (
+        "the gold patch fails on the arm64 image: 4 tests fail and 158 error, because the "
+        "pytest-httpbin 'httpbin' fixture is recursive on the image's pytest 8.3.4 and the "
+        "timeout tests need the network"
+    ),
+}
+# Repositories whose tests reach the live network are never chosen as a replacement.
+NETWORK_REPOS = {"psf/requests"}
+
 
 def load_panel(cache: Path, sub: str) -> dict[str, dict[str, Any]]:
     """instance_id -> {"resolved": bool, "api_calls": int | None}."""
@@ -309,6 +347,51 @@ def select(tasks: list[dict[str, Any]], rng: random.Random):
     return sorted(full, key=lambda t: t["id"]), sorted(pilot, key=lambda t: t["id"])
 
 
+def replacement_order(
+    broken_id: str, stratum: str, universe: list[dict[str, Any]], drawn: set[str]
+) -> list[dict[str, Any]]:
+    """Candidates to replace ``broken_id``, best first. Deterministic."""
+    pool = sorted(
+        (
+            t
+            for t in universe
+            if t["stratum"] == stratum
+            and t["id"] not in drawn
+            and t["id"] not in BROKEN
+            and t["repo"] not in NETWORK_REPOS
+        ),
+        key=lambda t: t["id"],
+    )
+    random.Random(f"{SEED}:replace:{broken_id}").shuffle(pool)
+    return pool
+
+
+def replace_broken(
+    full: list[dict[str, Any]], pilot: list[dict[str, Any]], universe: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+    """Swap every drawn task listed in BROKEN for its replacement (module docstring, step 5).
+    Returns the new full set, the new pilot and ``{broken id: replacement id}``."""
+    drawn = {t["id"] for t in full}
+    swaps: dict[str, str] = {}
+    for t in sorted(full, key=lambda t: t["id"]):
+        if t["id"] not in BROKEN:
+            continue
+        cands = replacement_order(t["id"], t["stratum"], universe, drawn)
+        if not cands:
+            sys.exit(f"no replacement for {t['id']}")
+        swaps[t["id"]] = cands[0]["id"]
+        drawn.add(cands[0]["id"])
+        nxt = [c["id"] for c in cands[1:4]]
+        print(f"replace {t['id']} ({t['stratum']}) by {cands[0]['id']}; next candidates: {nxt}")
+    by_id = {t["id"]: t for t in universe}
+
+    def swap(ts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out = [by_id[swaps[t["id"]]] if t["id"] in swaps else t for t in ts]
+        return sorted(out, key=lambda t: t["id"])
+
+    return swap(full), swap(pilot), swaps
+
+
 def quantiles20(xs: list[float]) -> list[int]:
     xs = sorted(xs)
     n = len(xs)
@@ -316,7 +399,11 @@ def quantiles20(xs: list[float]) -> list[int]:
 
 
 def write_manifest(
-    full: list[dict[str, Any]], pilot: list[dict[str, Any]], official: set[str]
+    full: list[dict[str, Any]],
+    pilot: list[dict[str, Any]],
+    official: set[str],
+    broken: list[dict[str, Any]],
+    swaps: dict[str, str],
 ) -> None:
     pilot_ids = {t["id"] for t in pilot}
     lines = [
@@ -331,6 +418,9 @@ def write_manifest(
         "# fits32k: our estimate that a short successful trajectory fits the 32K local context.",
         "# image: the native arm64 evaluation image (official swebench namespace where it exists,",
         "#   else Epoch AI's best-effort, untested build). Validate with the gold patch first.",
+        "# broken: the task grades wrongly on its image (BROKEN in the script). Its record is",
+        "#   kept, it is not part of the set (full_size and pilot_size count working tasks only)",
+        "#   and no plan can include it. replaced_by: the task that took its place.",
         "",
         "[meta]",
         'name = "swebench-verified-v1"',
@@ -346,7 +436,7 @@ def write_manifest(
         f"pilot_size = {len(pilot)}",
         "",
     ]
-    for t in full:
+    for t in sorted(full + broken, key=lambda t: t["id"]):
         lines += [
             "[[task]]",
             f'id = "{t["id"]}"',
@@ -354,8 +444,12 @@ def write_manifest(
             f"fits32k = {str(t['fits32k']).lower()}",
             f"pilot = {str(t['id'] in pilot_ids).lower()}",
             f'image = "{image_name(t["id"], official)}"',
-            "",
         ]
+        if t["id"] in BROKEN:
+            lines.append(f'broken = "{BROKEN[t["id"]]}"')
+            if t["id"] in swaps:
+                lines.append(f'replaced_by = "{swaps[t["id"]]}"')
+        lines.append("")
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text("\n".join(lines))
 
@@ -395,10 +489,14 @@ def main() -> int:
     fits = Counter(t["stratum"] for t in universe if t["fits32k"])
     print("arm64 fits32k by stratum:", dict(fits))
     full, pilot = select(universe, random.Random(SEED))
+    drawn_broken = [t for t in full if t["id"] in BROKEN]
+    full, pilot, swaps = replace_broken(full, pilot, universe)
+    by_id = {t["id"]: t for t in universe}
+    broken = drawn_broken + [by_id[i] for i in sorted(BROKEN) if i not in swaps and i in by_id]
     report("full set", full, panel)
     report("pilot", pilot, panel)
     if args.write:
-        write_manifest(full, pilot, official)
+        write_manifest(full, pilot, official, broken, swaps)
         print(f"\nwrote {MANIFEST}")
     return 0
 
