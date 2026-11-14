@@ -325,8 +325,13 @@ def test_pilot_stage_gate(tmp_path: Path, ratio: float, cut: bool) -> None:
     gate = json.loads((tmp_path / "gate.json").read_text())
     assert gate["cut"] is cut
     assert gate["r"] == pytest.approx(ratio)
-    stage2_tasks = {s.task_id for s in r._pending() if s.stage == 2 and not s.local}
-    assert len(stage2_tasks) == (10 if cut else 20)
+    pending = [s for s in r._pending() if s.stage == 2]
+    assert len({s.task_id for s in pending if s.provider == "anthropic"}) == (10 if cut else 20)
+    # The gate protects Anthropic's cap only. DeepSeek has its own budget and keeps every
+    # task and every configuration, whatever the gate decides.
+    deepseek = [s for s in pending if s.provider == "deepseek"]
+    assert len({s.task_id for s in deepseek}) == 20
+    assert len(deepseek) == 100
 
 
 def test_the_config_example_in_the_docs_loads(tmp_path: Path) -> None:

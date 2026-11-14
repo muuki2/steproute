@@ -298,8 +298,8 @@ def describe_plan(
         g = plan.gate
         lines.append(
             f"  stage gate: after stage 1, if {g.provider} month-to-date + r x the rest of the "
-            f"central estimate > {_fmt(g.threshold_usd)}, stage 2 paid cells are cut to "
-            f"{len(g.reduced_tasks)} tasks"
+            f"central estimate > {_fmt(g.threshold_usd)}, stage 2 {g.provider} cells are cut to "
+            f"{len(g.reduced_tasks)} tasks (other providers are not cut)"
         )
     return "\n".join(lines)
 
@@ -637,10 +637,21 @@ class Runner:
             attempts = cells.get(s.cell)
             if attempts and _done(attempts, self.config.limits.max_retries):
                 continue
-            if reduced is not None and s.stage >= 2 and not s.local and s.task_id not in reduced:
+            if reduced is not None and self._cut_by_gate(s, reduced):
                 continue
             out.append(s)
         return out
+
+    def _cut_by_gate(self, spec: RunSpec, reduced: set[str]) -> bool:
+        """Whether a gate that cut drops this cell. Only the gate's own provider is cut: the
+        gate protects that provider's cap, and every other provider has its own cap or budget."""
+        gate = self.plan.gate
+        return (
+            gate is not None
+            and spec.stage >= 2
+            and spec.provider == gate.provider
+            and spec.task_id not in reduced
+        )
 
     # --- the pilot's stage gate ---
 
@@ -683,7 +694,8 @@ class Runner:
             )
         doc = {"cut": cut, "reason": why, "r": r, "tasks": list(gate.reduced_tasks)}
         path.write_text(json.dumps(doc, indent=2) + "\n", "utf-8")
-        self.say(f"stage gate: {'CUT stage 2 to the 10-task subset' if cut else 'pass'} ({why})")
+        verdict = f"CUT stage 2 {gate.provider} cells to the 10-task subset" if cut else "pass"
+        self.say(f"stage gate: {verdict} ({why})")
 
     # --- lanes ---
 
@@ -708,7 +720,7 @@ class Runner:
                 self._evaluate_gate()
                 cut = self._gate_cut()
                 if cut is not None:
-                    specs = [s for s in specs if s.stage < 2 or s.task_id in cut]
+                    specs = [s for s in specs if not self._cut_by_gate(s, cut)]
             lane = _Lane([s for s in specs if s.stage == stage])
             workers = [
                 threading.Thread(target=self._paid_worker, args=(lane,), daemon=True)

@@ -311,7 +311,7 @@ The estimates assume mini-SWE-agent. A scaffold that condenses history, or uses 
 
 1. Run Ollama, the Haiku efforts and Sonnet low on all 20 tasks first. That is about $11 central.
 2. Compute r = realized ÷ estimated cost for those configurations.
-3. If r × the remaining central estimate would take the month above $70, cut the remaining paid configurations to 10 tasks, keeping the stratum balance (3, 3, 3, 1).
+3. If r × the remaining central estimate would take the Anthropic month above $70, cut the remaining Anthropic configurations to 10 tasks, keeping the stratum balance (3, 3, 3, 1). DeepSeek is not cut by this gate: it has its own $10 budget, and no DeepSeek configuration or task is dropped (decision of 13 Nov 2026).
 
 **What the pilot measures, replacing assumptions:**
 

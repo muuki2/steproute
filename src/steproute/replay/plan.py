@@ -101,7 +101,8 @@ class PilotGate:
     """``docs/TASKSET.md`` section 5, as a check. After every stage-1 run is finished:
     ``r = realised / estimated`` over stage 1's paid runs of ``provider``; if month-to-date
     spend plus ``r`` times the remaining central estimate passes ``threshold_usd``, the
-    remaining paid cells are cut to ``reduced_tasks`` (stratum-balanced 3, 3, 3, 1)."""
+    remaining cells of ``provider`` are cut to ``reduced_tasks`` (stratum-balanced 3, 3, 3, 1).
+    Other providers are never cut by the gate: each has its own cap or budget."""
 
     provider: str = "anthropic"
     threshold_usd: float = 70.0
