@@ -56,6 +56,8 @@ _TASK_KEYS = {
     "timeout_s",
     "gold_patch",
     "prompt",
+    "broken",
+    "replaced_by",
 }
 
 
@@ -85,19 +87,28 @@ class Task:
     #: The problem statement given to the agent (local tasks; SWE-bench tasks take it from
     #: the dataset row).
     prompt: str | None = None
+    #: Why the task cannot be graded correctly (for example its gold patch fails on the
+    #: image). A broken task keeps its record but is not part of the set: it is left out of
+    #: iteration, ``len``, ``pilot()`` and every plan.
+    broken: str | None = None
+    #: For a broken task: the id of the task that took its place in the set.
+    replaced_by: str | None = None
 
 
 @dataclass(frozen=True)
 class TaskManifest:
-    """A loaded manifest. Iterates over its tasks in file order."""
+    """A loaded manifest. Iterates over its working tasks in file order; the broken ones are
+    in ``broken_tasks`` and still found by ``get`` and ``in`` (so ``steproute tasks check``
+    can show why they are broken)."""
 
     meta: Mapping[str, Any]
     tasks: tuple[Task, ...]
     path: Path | None = None
+    broken_tasks: tuple[Task, ...] = ()
     _index: dict[str, Task] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        self._index.update({t.id: t for t in self.tasks})
+        self._index.update({t.id: t for t in (*self.tasks, *self.broken_tasks)})
 
     def __len__(self) -> int:
         return len(self.tasks)
@@ -169,6 +180,16 @@ def _task(raw: Any, index: int, meta: Mapping[str, Any], base: Path | None) -> T
     prompt = raw.get("prompt")
     if prompt is not None:
         _check_type(prompt, str, f"{where}, 'prompt'")
+    broken = raw.get("broken")
+    if broken is not None:
+        _check_type(broken, str, f"{where}, 'broken'")
+        if not broken.strip():
+            raise ManifestError(f"{where}, 'broken': give the reason")
+    replaced_by = raw.get("replaced_by")
+    if replaced_by is not None:
+        _check_type(replaced_by, str, f"{where}, 'replaced_by'")
+        if broken is None:
+            raise ManifestError(f"{where}: 'replaced_by' needs 'broken'")
     task = Task(
         id=tid,
         backend=backend,
@@ -181,7 +202,11 @@ def _task(raw: Any, index: int, meta: Mapping[str, Any], base: Path | None) -> T
         timeout_s=float(timeout),
         gold_patch=path("gold_patch"),
         prompt=prompt,
+        broken=broken,
+        replaced_by=replaced_by,
     )
+    if task.broken is not None and task.pilot:
+        raise ManifestError(f"{where}: a broken task cannot be in the pilot")
     if backend == "local" and (task.repo is None or not task.test_cmd):
         raise ManifestError(f"{where}: a local task needs 'repo' and 'test_cmd'")
     return task
@@ -205,16 +230,25 @@ def parse_manifest(data: Mapping[str, Any], *, path: Path | None = None) -> Task
     if not isinstance(raw_tasks, list) or not raw_tasks:
         raise ManifestError("a manifest needs at least one [[task]]")
     base = path.parent if path is not None else None
-    tasks = tuple(_task(raw, i, meta, base) for i, raw in enumerate(raw_tasks))
+    every = tuple(_task(raw, i, meta, base) for i, raw in enumerate(raw_tasks))
     seen: set[str] = set()
-    for t in tasks:
+    for t in every:
         if t.id in seen:
             raise ManifestError(f"task {t.id!r}: duplicate id")
         seen.add(t.id)
+    tasks = tuple(t for t in every if t.broken is None)
+    broken = tuple(t for t in every if t.broken is not None)
+    for t in broken:
+        if t.replaced_by is not None and t.replaced_by not in {w.id for w in tasks}:
+            raise ManifestError(
+                f"task {t.id!r}: replaced_by {t.replaced_by!r} is not a working task"
+            )
+    if not tasks:
+        raise ManifestError("a manifest needs at least one working [[task]]")
     for key, actual in (("full_size", len(tasks)), ("pilot_size", sum(t.pilot for t in tasks))):
         if key in meta and meta[key] != actual:
-            raise ManifestError(f"meta, {key!r}: says {meta[key]}, the file has {actual}")
-    return TaskManifest(meta=dict(meta), tasks=tasks, path=path)
+            raise ManifestError(f"meta, {key!r}: says {meta[key]}, the file has {actual} working")
+    return TaskManifest(meta=dict(meta), tasks=tasks, path=path, broken_tasks=broken)
 
 
 def load_manifest(path: str | Path) -> TaskManifest:

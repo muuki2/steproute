@@ -166,11 +166,11 @@ The alternatives each fail a hard requirement:
 | | Full set (150) | Pilot (20) |
 |---|---|---|
 | Strata | easy 40, medium 45, hard 50, unsolved 15 | 5 / 6 / 7 / 2 |
-| Repos | django 48, sympy 29, sphinx 23, astropy 14, pytest 13, requests 7, scikit-learn 7, matplotlib 6, seaborn 2, flask 1 | sphinx 4, sympy 4, astropy 3, django 3, pytest 2, scikit-learn 2, flask 1, requests 1 |
-| Human `difficulty` | <15 min 52, 15 min-1 h 86, 1-4 h 11, >4 h 1 | 5 / 14 / 1 / 0 |
-| Fits 32K (estimate) | 78 | 12 |
-| Public resolve rate: weak (Qwen2.5-Coder-32B) / Haiku 4.5 / Opus 4.5 | 7% / 55% / 75% | 0% / 55% / 70% |
-| Image source | 98 official, 52 Epoch | — |
+| Repos | django 50, sympy 32, sphinx 23, astropy 14, pytest 13, scikit-learn 7, matplotlib 6, seaborn 2, requests 2, flask 1 | django 4, sphinx 4, sympy 4, astropy 3, pytest 2, scikit-learn 2, flask 1 |
+| Human `difficulty` | <15 min 51, 15 min-1 h 87, 1-4 h 11, >4 h 1 | 4 / 15 / 1 / 0 |
+| Fits 32K (estimate) | 79 | 12 |
+| Public resolve rate: weak (Qwen2.5-Coder-32B) / Haiku 4.5 / Opus 4.5 | 6% / 56% / 74% | 0% / 55% / 70% |
+| Image source | 98 official, 52 Epoch | 14 official, 6 Epoch |
 
 **Reproduce**:
 
@@ -184,6 +184,10 @@ The manifest pins:
 - the dataset revision;
 - the experiments commit;
 - the seed.
+
+**Broken tasks (issue 58).** A task whose gold patch fails on its arm64 image can never be resolved, so it is replaced, not dropped. The ids are listed in `BROKEN` in `scripts/select_taskset.py`, each with its reason. The draw above is made first, unchanged, so no other task moves. Each drawn task in `BROKEN` is then replaced, in its pilot slot if it had one, by the first candidate that is in the same stratum, not yet drawn, not broken and not from `psf/requests` (its tests reach the live network), in an order fixed by `random.Random("17:replace:<broken id>")`. A candidate that fails its own check (gold must pass, baseline must fail) is added to `BROKEN` and the next one is taken. The manifest keeps a record of every broken task (`broken = "reason"`, and `replaced_by` for the one that took its place). It is not part of the set: `full_size` and `pilot_size` count working tasks, iteration skips it, and building a plan with it (named or from a plan file) raises an error. `steproute tasks check` still accepts its id, so the failure can be reproduced.
+
+Five tasks are replaced (section 8.3): `psf__requests-1766`, `-1921`, `-2317`, `-2931` and `-5414` by `sympy__sympy-16450`, `django__django-13401`, `django__django-16139`, `sympy__sympy-15875` and `sympy__sympy-23950`. The pilot's only change is `django__django-13401` for `psf__requests-1921` (hard).
 
 Docker Hub and GHCR image listings are not versioned. If an image disappears, the universe changes, and the script then reports a different selection.
 
@@ -394,7 +398,7 @@ Docker Desktop 28.0.4 (arm64, an 8 GB VM) on the M4 Pro, the official harness `s
 
 - **The official harness runs on this Mac**, one instance at a time, against a native arm64 image named in a one-row dataset. No emulation, no harness flag.
 - **Images: all 20 pilot images pulled.** 15 official from Docker Hub with `docker pull`; the 5 Epoch images from GHCR with `scripts/fetch_ghcr_image.py`, because Docker Desktop's pull got `403 Forbidden` on the GHCR token request (it presents the stored `ghcr.io` login; an anonymous token works). Compressed 0.72-1.15 GB each, 19.1 GB in all; unpacked 2.4-4.0 GB each as `docker image ls` shows them; the Docker image store grew by 15.0 GB for all 20 (`docker system df`, shared layers stored once). Pull time 105-478 s per official image and 211-673 s per Epoch image, measured while about 40 GB of Ollama models downloaded on the same line, so these are upper bounds. None failed to run on arm64.
-- **Grading: 19 of 20 grade correctly, 1 does not.** For each task the gold patch and the baseline patch (`--patch baseline`: one inert new file, so the tests run on the unchanged code) went through `steproute tasks check`. `--patch empty` never reaches the harness (it skips empty patches) and is shown only for completeness.
+- **Grading: 19 of 20 grade correctly, 1 does not** (`psf__requests-1921`, replaced since: section 8.3). For each task the gold patch and the baseline patch (`--patch baseline`: one inert new file, so the tests run on the unchanged code) went through `steproute tasks check`. `--patch empty` never reaches the harness (it skips empty patches) and is shown only for completeness.
 
 | Task | Stratum | Image source | Size (GB) | Gold | Empty | Baseline | s (gold / baseline) |
 |---|---|---|---|---|---|---|---|
@@ -403,9 +407,10 @@ Docker Desktop 28.0.4 (arm64, an 8 GB VM) on the M4 Pro, the official harness `s
 | `astropy__astropy-14309` | easy | official | 1.03 | passed (F2P 1/1, P2P 141/141) | failed (not run) | failed (F2P 0/1, P2P 141/141) | 42 / 41 |
 | `django__django-11728` | hard | Epoch | 0.96 | passed (F2P 2/2, P2P 44/44) | failed (not run) | failed (F2P 1/2, P2P 43/44) | 21 / 22 |
 | `django__django-11815` | easy | official | 1.07 | passed (F2P 2/2, P2P 44/44) | failed (not run) | failed (F2P 0/2, P2P 44/44) | 20 / 21 |
+| `django__django-13401` (replaced `psf__requests-1921`, 8.3) | hard | Epoch | 0.96 | passed | not run | failed | 21 / 20 |
 | `django__django-14771` | medium | Epoch | 1.03 | passed (F2P 1/1, P2P 60/60) | failed (not run) | failed (F2P 0/1, P2P 60/60) | 25 / 23 |
 | `pallets__flask-5014` | easy | official | 0.85 | passed (F2P 1/1, P2P 59/59) | failed (not run) | failed (F2P 0/1, P2P 59/59) | 22 / 21 |
-| `psf__requests-1921` | hard | official | 0.80 | failed (F2P 6/6, P2P 104/107) **WRONG** | failed (not run) | failed (F2P 5/6, P2P 104/107) | 46 / 45 |
+| `psf__requests-1921` (replaced by `django__django-13401`, 8.3) | hard | official | 0.80 | failed (F2P 6/6, P2P 104/107) **WRONG** | failed (not run) | failed (F2P 5/6, P2P 104/107) | 46 / 45 |
 | `pytest-dev__pytest-5787` | hard | official | 0.82 | passed (F2P 2/2, P2P 123/123) | failed (not run) | failed (F2P 0/2, P2P 123/123) | 24 / 24 |
 | `pytest-dev__pytest-7324` | medium | Epoch | 0.72 | passed (F2P 3/3, P2P 58/58) | failed (not run) | failed (F2P 0/3, P2P 58/58) | 22 / 21 |
 | `scikit-learn__scikit-learn-25747` | hard | official | 1.15 | passed (F2P 1/1, P2P 14/14) | failed (not run) | failed (F2P 0/1, P2P 14/14) | 20 / 20 |
@@ -419,18 +424,47 @@ Docker Desktop 28.0.4 (arm64, an 8 GB VM) on the M4 Pro, the official harness `s
 | `sympy__sympy-19346` | medium | official | 0.99 | passed (F2P 1/1, P2P 40/40) | failed (not run) | failed (F2P 0/1, P2P 40/40) | 19 / 19 |
 | `sympy__sympy-21596` | unsolved | official | 0.99 | passed (F2P 1/1, P2P 46/46) | failed (not run) | failed (F2P 0/1, P2P 46/46) | 23 / 23 |
 
-  - **`psf__requests-1921` grades wrongly: the gold patch fails** (official image). Every FAIL_TO_PASS test passes, but 3 of 107 PASS_TO_PASS tests fail, so the task is "not resolved" even for the reference fix. In the harness output: `test_POSTBIN_GET_POST_FILES_WITH_DATA` fails with `TypeError: '...' object (type: <class 'str'>) must be callable`, because the image has pytest 8.3.4 (the test uses the string form of `pytest.raises`, removed in pytest 5); `test_mixed_case_scheme_acceptable` and `test_pyopenssl_redirect` fail with `SSLError: CERTIFICATE_VERIFY_FAILED` on requests to `https://httpbin.org` (the 2014 code's bundled certificates do not verify today's chain). The baseline also passes 5 of the 6 FAIL_TO_PASS tests, so only one test separates a fix from no fix. **No model can pass this task on this image**: drop it from the pilot or count it as broken in the report (a question for the maintainer).
+  - **`psf__requests-1921` grades wrongly: the gold patch fails** (official image). Every FAIL_TO_PASS test passes, but 3 of 107 PASS_TO_PASS tests fail, so the task is "not resolved" even for the reference fix. In the harness output: `test_POSTBIN_GET_POST_FILES_WITH_DATA` fails with `TypeError: '...' object (type: <class 'str'>) must be callable`, because the image has pytest 8.3.4 (the test uses the string form of `pytest.raises`, removed in pytest 5); `test_mixed_case_scheme_acceptable` and `test_pyopenssl_redirect` fail with `SSLError: CERTIFICATE_VERIFY_FAILED` on requests to `https://httpbin.org` (the 2014 code's bundled certificates do not verify today's chain). The baseline also passes 5 of the 6 FAIL_TO_PASS tests, so only one test separates a fix from no fix. **No model can pass this task on this image.** It is marked broken in the manifest and replaced (section 8.3).
   - `django__django-11728` (Epoch) grades correctly, but its baseline is not the dataset's: one FAIL_TO_PASS test (`test_app_not_found`) already passes and one PASS_TO_PASS test (`test_builtin_fields`) fails before the fix. The direction of the grade is right (gold passes, baseline fails).
   - Every other task shows the textbook signature: gold passes everything, baseline fails exactly the FAIL_TO_PASS tests and passes every PASS_TO_PASS test. That includes the other four Epoch images, which their authors call untested.
 - **Seconds per check: 18-85 s** (median about 21 s; about 15 s of each is the harness stopping its container). The astropy images are the slowest (41-85 s). This replaces the 120 s assumed in section 3 for the check; the agent's own container time is in `docs/REPLAY.md`.
 - **Local throughput of `qwen3.5:9b`** (effort `none`) in the agent loop: 32-39 output tokens per second over whole-call time, 2.8-3.9 s per step including the command, with 96% of prompt tokens read from Ollama's prefix cache. One run hit the 32K cap after 54 steps (30,657 prompt tokens), on a task estimated "long".
 - **Contamination, seen directly:** in one local run `qwen3.5:9b` submitted a patch byte-identical to the gold patch of `pallets__flask-5014` (same blob hash `1aa82562`, same error message).
 
+### 8.3 Broken tasks and their replacements (issue 58, 14 Nov 2026)
+
+Same machine and harness as 8.1. Every `psf/requests` task of the set was pulled and checked, because their tests reach the network. Seconds are the harness run for one check, from `steproute tasks check`.
+
+| Task | Stratum | Gold | Baseline | s (gold / baseline) | Verdict |
+|---|---|---|---|---|---|
+| `psf__requests-1142` | easy | passed | failed | 56 / 19 | works, stays |
+| `psf__requests-6028` | hard | passed | failed | 18 / 19 | works, stays |
+| `psf__requests-1766` | easy | **failed** (3 of 91 tests) | failed | 41 / 42 | broken |
+| `psf__requests-1921` | hard | **failed** (3 of 107 P2P, 8.1) | failed | 46 / 45 | broken |
+| `psf__requests-2317` | easy | **failed** (9 of 143 tests) | not run | 271 / - | broken |
+| `psf__requests-2931` | hard | **failed** (2 failed, 81 errors) | failed | 19 / 19 | broken |
+| `psf__requests-5414` | medium | **failed** (4 failed, 158 errors) | not run | 19 / - | broken |
+| `sympy__sympy-16450` | easy | passed | failed | 58 / 56 | replaces `-1766` |
+| `django__django-13401` | hard | passed | failed | 21 / 20 | replaces `-1921` (pilot) |
+| `django__django-16139` | easy | passed | failed | 21 / 20 | replaces `-2317` |
+| `sympy__sympy-15875` | hard | passed | failed | 23 / 22 | replaces `-2931` |
+| `sympy__sympy-23950` | medium | passed | failed | 19 / 19 | replaces `-5414` |
+
+Why the four new ones are broken (harness `test_output.txt`, gold patch applied):
+
+- `-1766`: 3 tests fail. `test_POSTBIN_GET_POST_FILES_WITH_DATA` and `test_conflicting_post_params` fail on the string form of `pytest.raises` (the image has pytest 8.3.4), `test_mixed_case_scheme_acceptable` on `CERTIFICATE_VERIFY_FAILED` against `https://httpbin.org`.
+- `-2317`: 9 of 143 tests fail, with the same two causes plus timeouts reaching httpbin.org (the run takes 4 minutes). Its baseline check was stopped, since the gold patch already fails.
+- `-2931` and `-5414`: the `pytest-httpbin` fixtures break under pytest 8.3.4 (`recursive dependency involving fixture 'httpbin' detected`), so 80 to 150 tests error at setup, and the timeout tests need the network. Their baseline checks do not matter: for `-5414` it was stopped.
+
+The two that work (`-1142`, `-6028`) pass every test the harness runs for them. A requests task is not broken by being from requests, so they stay.
+
+Replacements are the first candidate in the seeded order (section 2, "Broken tasks"), none from `psf/requests`; all five passed gold and failed baseline at the first try, so no second candidate was needed. Image sources: all but `django__django-13401` are official; that one is Epoch's (fetched with `scripts/fetch_ghcr_image.py`, 0.96 GB compressed). The step-count quantiles in `cost_assumptions.toml` were derived from the original 150 tasks and have not been regenerated (a separate change).
+
 ### 8.2 Still not verified
 
 Money, or more time on the machine than issue 56 had:
 
-- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do, except `psf__requests-1921`; the other 130 images of the full set were not pulled or validated. Validate each with `--patch gold` and `--patch baseline` before its first paid run.
+- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do (section 8.3 for the replacement of `psf__requests-1921`). Besides them, the other 6 `psf/requests` tasks were checked (5 of those 7 images are broken, including `-1921`), and the 4 replacements; the other 124 images of the full set were not pulled or validated. Validate each with `--patch gold` and `--patch baseline` before its first paid run.
 - **Disk for all 150 images.** Extrapolating the pilot: about 75 GB in Docker's store (0.75 GB per image after sharing), well within the VM's 900 GB. The pre-flight's free-disk line measures the host disk at the output directory, not the Docker VM's disk.
 - **Every per-run cost number for the 5.5 and 5.2 Claude models and the current DeepSeek models.** These are derived from older analogs and must be measured in the pilot.
 - **That prompt caching works end to end against the live Anthropic API** through the proxy (sensitivity 1 above). The proxy's breakpoints are tested against a mock only.
