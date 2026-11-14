@@ -93,13 +93,13 @@ class MFModel(nn.Module):
         ).squeeze()
         return out
 
-    @torch.no_grad()
     def pred_win_rate(self, model_a: int, model_b: int, prompt_vec: Any) -> float:
         """Probability that ``model_a`` beats ``model_b`` on a new prompt vector."""
-        x = torch.as_tensor(prompt_vec, dtype=torch.float).reshape(1, -1)
-        embed = F.normalize(self.P(torch.tensor([model_a, model_b])), p=2, dim=1)
-        logits = self.classifier(embed * self._project(x)).squeeze()
-        return float(torch.sigmoid(logits[0] - logits[1]))
+        with torch.no_grad():
+            x = torch.as_tensor(prompt_vec, dtype=torch.float).reshape(1, -1)
+            embed = F.normalize(self.P(torch.tensor([model_a, model_b])), p=2, dim=1)
+            logits = self.classifier(embed * self._project(x)).squeeze()
+            return float(torch.sigmoid(logits[0] - logits[1]))
 
 
 def train_loops(

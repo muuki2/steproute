@@ -155,7 +155,7 @@ def build_policies(
     )
 
     def win_rate(x: NDArray[np.float64]) -> float:
-        return net.pred_win_rate(strong, weak, x)
+        return float(net.pred_win_rate(strong, weak, x))
 
     calib = [win_rate(x) for x in contexts]
     cuts = thresholds(calib, shares)

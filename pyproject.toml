@@ -63,3 +63,8 @@ strict = true
 [[tool.mypy.overrides]]
 module = ["pareto_bandit", "pareto_bandit.*", "torch", "torch.*", "torch_geometric", "torch_geometric.*"]
 ignore_missing_imports = true
+
+# Without the extra, torch.nn.Module is Any; the adapted upstream modules subclass it.
+[[tool.mypy.overrides]]
+module = ["steproute.baselines._vendor.*"]
+disallow_subclassing_any = false
