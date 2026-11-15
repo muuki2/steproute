@@ -93,6 +93,12 @@ def add_replay(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     common(p, plan=False)
     env_file(p)
     p.add_argument("--execute", action="store_true", help="really run (this spends money)")
+    p.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="also run again the cells given up as provider_error or infra_error after "
+        "max_retries: further attempts in the same journal, with max_retries afresh",
+    )
     p.set_defaults(func=_resume)
 
     p = rsub.add_parser("status", help="Runs finished, in flight, and spend per month.")
@@ -183,6 +189,7 @@ def _runner(args: argparse.Namespace) -> Any:
         out=args.out,
         inputs=_inputs(args),
         deps=RunnerDeps(secrets=secrets, ledger_path=args.ledger),
+        retry_errors=bool(getattr(args, "retry_errors", False)),
     )
 
 
@@ -269,9 +276,22 @@ def _shared(args: argparse.Namespace) -> tuple[Path, str]:
     )
 
 
+def _recorded_config(args: argparse.Namespace) -> Path | None:
+    """``--config``, else the config recorded in ``<out>/plan.json``, else none."""
+    if args.config is not None:
+        return Path(args.config)
+    path = args.out / "plan.json"
+    if path.exists():
+        recorded = (json.loads(path.read_text("utf-8")).get("inputs") or {}).get("config")
+        if recorded:
+            return Path(recorded)
+    return None
+
+
 def _status(args: argparse.Namespace) -> int:
     from steproute.replay.journal import Journal
     from steproute.replay.ledger import Ledger
+    from steproute.replay.runner import given_up
 
     def go(a: argparse.Namespace) -> int:
         j = Journal.open(a.out / "runs.jsonl")
@@ -283,6 +303,12 @@ def _status(args: argparse.Namespace) -> int:
         print(f"attempts: {len(j.attempts)}; cells finished: {sum(1 for _ in j.finished())}")
         for k, v in sorted(counts.items()):
             print(f"  {k:<18} {v}")
+        retries = load_replay_config(_recorded_config(a)).limits.max_retries
+        gave_up = sum(1 for att in j.by_cell().values() if given_up(att, retries))
+        print(
+            f"cells given up after {retries} retries (provider_error or infra_error): {gave_up}"
+            + ("; `steproute replay resume --retry-errors` runs them again" if gave_up else "")
+        )
         print("this directory:")
         for (prov, month), usd in sorted(led.by_month().items()):
             print(f"spend {prov:<10} {month}  ${usd:,.4f}")

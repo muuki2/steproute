@@ -83,6 +83,7 @@ __all__ = [
     "Runner",
     "RunnerDeps",
     "describe_plan",
+    "given_up",
     "missing_keys",
     "run_bound",
     "write_grids",
@@ -210,16 +211,35 @@ def describe_plan(
     environ: Mapping[str, str],
     now: float,
     ledger_note: str = "",
+    retry_errors: bool = False,
 ) -> str:
     """The plan, the estimated spend per provider with its range, the caps, month-to-date
     spend (from the shared ledger: every output directory) and the key status (set or not
-    set, never the value)."""
-    done = {a.cell for a in journal.finished()} if journal else set()
-    pending = [s for s in plan.specs if s.cell not in done]
+    set, never the value).
+
+    "To run" is what ``Runner._pending`` runs: cells not finished (``_done``), and the
+    given-up cells (``given_up``) only with ``retry_errors``; without it they are counted on
+    their own and left out of the order and the estimates."""
+    cells = journal.by_cell() if journal else {}
+    mr = config.limits.max_retries
+    pending: list[RunSpec] = []
+    finished = gave_up = 0
+    for s in plan.specs:
+        attempts = cells.get(s.cell, [])
+        if not attempts or not _done(attempts, mr):
+            pending.append(s)
+        elif given_up(attempts, mr):
+            if retry_errors:
+                pending.append(s)
+            else:
+                gave_up += 1
+        else:
+            finished += 1
     lines = [
         f"plan {plan.name}: {plan.description}",
-        f"  runs: {len(plan.specs)} in the plan, {len(plan.specs) - len(pending)} finished, "
-        f"{len(pending)} to run",
+        f"  runs: {len(plan.specs)} in the plan, {finished} finished, "
+        + (f"{gave_up} given up, " if gave_up else "")
+        + f"{len(pending)} to run",
         "",
         "  order (cheapest first; configuration-major):",
     ]
@@ -326,10 +346,24 @@ def describe_plan(
 # --- the grid ----------------------------------------------------------------------------
 
 
+#: The statuses a cell can be given up with after ``max_retries``, and that ``resume
+#: --retry-errors`` runs again.
+GIVEN_UP = ("provider_error", "infra_error")
+
+
+def _round(attempts: Sequence[Attempt]) -> Sequence[Attempt]:
+    """The attempts of the cell's current round: from the last attempt that ``--retry-errors``
+    started (it marks its start line ``retry_errors``), else all of them."""
+    for i in range(len(attempts) - 1, -1, -1):
+        if attempts[i].start.get("retry_errors"):
+            return attempts[i:]
+    return attempts
+
+
 def _retryable(attempts: Sequence[Attempt]) -> int:
-    """Attempts that count against ``max_retries``: a deferred one (``budget_stop``,
-    ``balance_stop``) does not."""
-    return sum(1 for a in attempts if a.status not in DEFERRED)
+    """Attempts of the current round that count against ``max_retries``: a deferred one
+    (``budget_stop``, ``balance_stop``) does not."""
+    return sum(1 for a in _round(attempts) if a.status not in DEFERRED)
 
 
 def _done(attempts: Sequence[Attempt], max_retries: int) -> bool:
@@ -337,6 +371,12 @@ def _done(attempts: Sequence[Attempt], max_retries: int) -> bool:
     if last.terminal:
         return True
     return last.status in RETRYABLE and _retryable(attempts) > max_retries
+
+
+def given_up(attempts: Sequence[Attempt], max_retries: int) -> bool:
+    """Whether the cell is finished only because its errors used up the retries: its last
+    attempt is a ``provider_error`` or ``infra_error`` past ``max_retries``."""
+    return bool(attempts) and attempts[-1].status in GIVEN_UP and _done(attempts, max_retries)
 
 
 def write_grids(
@@ -435,8 +475,14 @@ class Runner:
         out: Path,
         deps: RunnerDeps | None = None,
         inputs: Mapping[str, Any] | None = None,
+        retry_errors: bool = False,
     ) -> None:
         self.inputs = dict(inputs or {})
+        #: Run the given-up cells (``given_up``) again, once each, as a fresh round of
+        #: attempts in the same journal (``steproute replay resume --retry-errors``).
+        self.retry_errors = retry_errors
+        self._reopen: set[tuple[str, str, str, int]] = set()  # given up, to start again
+        self._reopened: set[tuple[str, str, str, int]] = set()  # their new round has started
         self.plan = plan
         self.config = config
         self.catalog = catalog
@@ -521,19 +567,12 @@ class Runner:
             Ledger(self.ledger_path, clock=self.deps.clock) if self.ledger_path.exists() else None
         )
         missing = missing_keys(self.plan, self.config, self.deps.environ)
-        text = describe_plan(
-            self.plan,
-            self.catalog,
-            self.config,
-            ledger=ledger,
-            journal=journal,
-            environ=self.deps.environ,
-            now=now,
-            ledger_note=f"{self.ledger_path} ({self.ledger_source})"
-            + ("" if ledger is not None else "; not created yet: nothing spent"),
-        )
+        text = self._describe(journal, ledger, now)
         if not execute:
             self.say(text)
+            note = self._given_up_note(journal)
+            if note:
+                self.say(note)
             self.say("\nDRY RUN: nothing was run and nothing was spent. Add --execute to run.")
             for m in missing:
                 self.say(f"  a real run would stop here: {m}")
@@ -564,9 +603,44 @@ class Runner:
                 mirror=self.out / "ledger.jsonl",
             )
             try:
-                return self._run_locked(text)
+                return self._run_locked()
             finally:
                 self.ledger.close()  # releases what this runner still holds
+
+    def _describe(self, journal: Journal | None, ledger: Ledger | None, now: float) -> str:
+        return describe_plan(
+            self.plan,
+            self.catalog,
+            self.config,
+            ledger=ledger,
+            journal=journal,
+            environ=self.deps.environ,
+            now=now,
+            retry_errors=self.retry_errors,
+            ledger_note=f"{self.ledger_path} ({self.ledger_source})"
+            + ("" if ledger is not None else "; not created yet: nothing spent"),
+        )
+
+    def _given_up_note(self, journal: Journal | None) -> str:
+        """How many cells of the plan were given up after their retries, and what happens to
+        them in this invocation; empty when there are none."""
+        if journal is None:
+            return ""
+        cells = journal.by_cell()
+        mr = self.config.limits.max_retries
+        n = sum(1 for s in self.plan.specs if given_up(cells.get(s.cell, []), mr))
+        if not n:
+            return ""
+        if self.retry_errors:
+            return (
+                f"  given up: {n} cell(s) ended as provider_error or infra_error after "
+                f"{mr} retries; --retry-errors runs them again, with {mr} retries afresh"
+            )
+        return (
+            f"  given up: {n} cell(s) ended as provider_error or infra_error after {mr} "
+            "retries and count as finished; `steproute replay resume --retry-errors` runs them "
+            "again"
+        )
 
     def _unknown_spend(self, ledger: Ledger | None) -> str:
         """Why a real run must not start because of spend in this directory's own ledger that
@@ -588,7 +662,7 @@ class Runner:
             + ("" if self.config.path is None else f" --config {self.config.path}")
         )
 
-    def _run_locked(self, text: str) -> int:
+    def _run_locked(self) -> int:
         assert self.ledger is not None
         with self.ledger.exclusive():
             self.ledger.refresh()
@@ -631,7 +705,12 @@ class Runner:
             self.say(
                 f"ledger: {self.ledger.skipped_lines} unreadable line(s) skipped (torn writes)"
             )
-        self.say(text)
+        # Described again from the journal as it is now (runs in flight closed above), so the
+        # counts are what ``_pending`` runs.
+        self.say(self._describe(self.journal, self.ledger, self.deps.clock()))
+        note = self._given_up_note(self.journal)
+        if note:
+            self.say(note)
         self.say("")
         self.say("REAL RUN: starting. Ctrl-C stops after the calls in flight; resume continues.")
         pending = self._pending()
@@ -714,7 +793,15 @@ class Runner:
         for s in self.plan.specs:
             attempts = cells.get(s.cell)
             if attempts and _done(attempts, self.config.limits.max_retries):
-                continue
+                reopen = (
+                    self.retry_errors
+                    and s.cell not in self._reopened
+                    and given_up(attempts, self.config.limits.max_retries)
+                )
+                if not reopen:
+                    continue
+                with self._cv:
+                    self._reopen.add(s.cell)
             if reduced is not None and self._cut_by_gate(s, reduced):
                 continue
             out.append(s)
@@ -988,6 +1075,10 @@ class Runner:
         budget = None if spec.local or budget is None or budget >= cap else budget
         with self._cv:
             attempts = self.journal.by_cell().get(spec.cell, [])
+            fresh = spec.cell in self._reopen
+            if fresh:
+                self._reopen.discard(spec.cell)
+                self._reopened.add(spec.cell)
             start = self.journal.record_start(
                 {
                     "run_id": run_id,
@@ -1009,6 +1100,9 @@ class Runner:
                         6,
                     ),
                     "budget_usd": round(cap if budget is None else budget, 6),
+                    # The first attempt of a new round (``--retry-errors``): ``max_retries``
+                    # counts again from here.
+                    **({"retry_errors": True} if fresh else {}),
                 }
             )
         t0 = time.monotonic()

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from steproute.collectors.proxy.checks import (
+    CHECK_TOOL_CALL,
     CheckResult,
     StreamAccumulator,
     normalise_usage,
@@ -28,7 +29,7 @@ from steproute.collectors.proxy.checks import (
 from steproute.collectors.proxy.config import FORWARDED_PARAMS, ProxyConfig, UpstreamConfig
 from steproute.collectors.proxy.session import SessionTable, session_id_from_messages, split_prompt
 from steproute.collectors.proxy.source import DecisionSource, SourceError
-from steproute.collectors.proxy.upstream import UpstreamError, UpstreamPool
+from steproute.collectors.proxy.upstream import TOOL_CALL_PARSE, UpstreamError, UpstreamPool
 from steproute.core.catalog import Catalog
 from steproute.core.cost import AttemptUsage, price_usage
 from steproute.core.privacy import PrivacyConfig
@@ -51,8 +52,15 @@ def default_effort(profile: ModelProfile) -> str:
     return "medium" if "medium" in profile.efforts else profile.efforts[0]
 
 
-def _error_body(status: int, kind: str, message: str) -> dict[str, Any]:
-    return {"error": {"message": message, "type": kind, "code": status}}
+def _error_body(
+    status: int, kind: str, message: str, upstream_kind: str | None = None
+) -> dict[str, Any]:
+    err: dict[str, Any] = {"message": message, "type": kind, "code": status}
+    if upstream_kind is not None:
+        # Which upstream failure it was (an exception class name, or ``tool_call_parse``), so
+        # a client can tell them apart without reading the message.
+        err["upstream_kind"] = upstream_kind
+    return {"error": err}
 
 
 def _sse(obj: Mapping[str, Any] | str) -> bytes:
@@ -507,7 +515,11 @@ class Proxy:
                 if err
                 else "no upstream could serve this request (see the proxy log)"
             )
-            resp_err = Response(status, headers, _error_body(status, "upstream_error", message))
+            resp_err = Response(
+                status,
+                headers,
+                _error_body(status, "upstream_error", message, err.kind if err else None),
+            )
             resp_err._finish = lambda: self._finish(step, None)
             return resp_err
         final["model"] = step.client_model
@@ -587,7 +599,11 @@ class Proxy:
                 if err
                 else "no upstream could serve this request"
             )
-            r = Response(status, headers, _error_body(status, "upstream_error", message))
+            r = Response(
+                status,
+                headers,
+                _error_body(status, "upstream_error", message, err.kind if err else None),
+            )
             r._finish = lambda: self._finish(step, None)
             return r
         options = step.params.get("stream_options")
@@ -618,7 +634,10 @@ class Proxy:
                 self._count("upstream_errors")
                 yield _sse(
                     _error_body(
-                        exc.status, "upstream_error", f"upstream failed mid-stream ({exc.kind})"
+                        exc.status,
+                        "upstream_error",
+                        f"upstream failed mid-stream ({exc.kind})",
+                        exc.kind,
                     )
                 )
             except GeneratorExit:
@@ -649,6 +668,10 @@ class Proxy:
         signals["proxy_mode"] = step.mode
         signals["attempts"] = len(called)
         failed = [a.check.failed for a in called if a.check is not None and a.check.failed]
+        # The model wrote a tool call the upstream could not parse, so the upstream failed the
+        # request: the same failure the tool-call check finds in a reply (``docs/PROXY.md``).
+        unparsed = [a for a in called if a.error is not None and a.error.kind == TOOL_CALL_PARSE]
+        failed += [CHECK_TOOL_CALL for _ in unparsed]
         if failed:
             signals["failed_checks"] = failed
         errors = sum(1 for a in called if a.error is not None)
@@ -676,6 +699,8 @@ class Proxy:
             and not step.signals.get("fallback_to_client")
         ):
             signals.update(signals_for(last.check))
+        elif last is None and unparsed and called[-1] is unparsed[-1]:
+            signals["tool_error"] = True  # the label signal of that check (error tier)
         responded = [a for a in called if a.usage is not None]
         outcome = Outcome(
             decision_id=step.outcome_id,
