@@ -32,6 +32,7 @@ from steproute.collectors.proxy.config import UpstreamConfig
 __all__ = [
     "EPHEMERAL",
     "OFFLINE_ENV",
+    "REJECTED_MAX_CHARS",
     "TOOL_CALL_PARSE",
     "Prepared",
     "UpstreamError",
@@ -84,21 +85,55 @@ def load_litellm() -> Any:
 
 
 class UpstreamError(Exception):
-    """An upstream call failed before producing a response."""
+    """An upstream call failed before producing a response.
 
-    def __init__(self, status: int, kind: str, message: str) -> None:
+    ``rejected``: for the ``tool_call_parse`` kind only, the tool call the upstream could not
+    parse, as ``{"arguments", "parser_error", "length", "truncated"}``. It holds the model's
+    own text, so it never goes into the message (``str``), a log line or an outcome; the proxy
+    returns it only in its answer to the client that made the request."""
+
+    def __init__(
+        self, status: int, kind: str, message: str, rejected: Mapping[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.kind = kind
+        self.rejected = rejected
 
 
 #: The error kind of an upstream that failed the whole request because it could not parse the
 #: tool call the model wrote. Ollama (0.40.x, ``/v1/chat/completions``) answers HTTP 500 with
 #: ``{"error": {"message": "error parsing tool call: raw='...', err=..."}}`` where another
 #: provider returns the reply with unparseable arguments. The message carries the model's raw
-#: output, so it is not kept: the error's text is a fixed sentence (``docs/PROXY.md``).
+#: output, so the error's text is a fixed sentence; the rejected arguments and the parser's
+#: error go only to the client, in the answer (``UpstreamError.rejected``, ``docs/PROXY.md``).
 TOOL_CALL_PARSE = "tool_call_parse"
 _TOOL_CALL_PARSE_PREFIX = "error parsing tool call"
+#: The most characters of rejected arguments the proxy returns to the client.
+REJECTED_MAX_CHARS = 8000
+_PARSER_ERROR_MAX_CHARS = 500
+
+
+def _rejected_call(message: str) -> dict[str, Any] | None:
+    """The arguments and the parser's error from Ollama's message
+    ``error parsing tool call: raw='<arguments>', err=<parser error>``, or ``None`` when the
+    message has another shape. The arguments can contain ``'`` and ``, err=`` themselves, so
+    the split is on the last ``', err=``."""
+    text = message.lstrip()
+    if not text.startswith(_TOOL_CALL_PARSE_PREFIX):
+        return None
+    start = text.find("raw='", len(_TOOL_CALL_PARSE_PREFIX))
+    end = text.rfind("', err=")
+    if start < 0 or end < start + len("raw='"):
+        return None
+    raw = text[start + len("raw='") : end]
+    parser_error = text[end + len("', err=") :].strip()
+    return {
+        "arguments": raw[:REJECTED_MAX_CHARS],
+        "parser_error": parser_error[:_PARSER_ERROR_MAX_CHARS],
+        "length": len(raw),
+        "truncated": len(raw) > REJECTED_MAX_CHARS,
+    }
 
 
 def _upstream_message(exc: Exception) -> str:
@@ -120,11 +155,13 @@ def _as_error(exc: Exception) -> UpstreamError:
     status = getattr(exc, "status_code", None)
     if not isinstance(status, int) or not 400 <= status <= 599:
         status = 504 if "timeout" in type(exc).__name__.lower() else 502
-    if status == 500 and _upstream_message(exc).lstrip().startswith(_TOOL_CALL_PARSE_PREFIX):
+    upstream_message = _upstream_message(exc)
+    if status == 500 and upstream_message.lstrip().startswith(_TOOL_CALL_PARSE_PREFIX):
         return UpstreamError(
             status,
             TOOL_CALL_PARSE,
             "the upstream could not parse the model's tool call (its text is not kept)",
+            _rejected_call(upstream_message),
         )
     return UpstreamError(status, type(exc).__name__, str(exc)[:500])
 

@@ -1,9 +1,11 @@
 """Where the agent's commands run: a task container, or a plain local directory (tests).
 
 Both start from a clean checkout with one commit, so the final patch is ``git diff`` against
-it. Every command, git included, goes through ``steproute.tasks.check.run_command``, which
-drops git's repository-local variables (``GIT_DIR`` and friends), so nothing here can act on
-the repository the runner was started from. Neither passes the runner's environment to the
+it. Both put an ``apply_patch`` command (``steproute.replay.apply_patch``) on the commands'
+``PATH``, outside the repository, so it never shows in the diff. Every command, git included,
+goes through ``steproute.tasks.check.run_command``, which drops git's repository-local
+variables (``GIT_DIR`` and friends), so nothing here can act on the repository the runner was
+started from. Neither passes the runner's environment to the
 commands: a command the model writes can never read an API key (``env`` inside the workspace
 shows only a fixed, harmless set).
 Standard library only.
@@ -13,6 +15,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -22,7 +25,15 @@ from typing import Protocol
 from steproute.tasks.check import run_command
 from steproute.tasks.manifest import Task
 
-__all__ = ["DockerWorkspace", "ExecResult", "LocalWorkspace", "Workspace", "WorkspaceError"]
+__all__ = [
+    "APPLY_PATCH_PATH",
+    "DockerWorkspace",
+    "ExecResult",
+    "LocalWorkspace",
+    "Workspace",
+    "WorkspaceError",
+    "apply_patch_source",
+]
 
 #: The only environment a command sees (plus ``PATH``, and ``HOME`` in a local workspace).
 SAFE_ENV = {
@@ -40,6 +51,26 @@ SAFE_ENV = {
 _NEUTRAL_CWD = Path(tempfile.gettempdir())
 
 _GIT_IDENT = ["-c", "user.name=steproute", "-c", "user.email=", "-c", "commit.gpgsign=false"]
+
+
+#: Where a task container gets the ``apply_patch`` command: on the image's default ``PATH``,
+#: outside ``/testbed``.
+APPLY_PATCH_PATH = "/usr/local/bin/apply_patch"
+
+#: The interpreters a container tries for ``apply_patch``, in order. The image's system Python
+#: comes first: it is the same in every SWE-bench image and is not the task's environment, so
+#: nothing the model installs or removes in ``testbed`` changes the command. ``python3`` on
+#: ``PATH`` is the last resort (the script runs on Python 3.6 and later).
+_CONTAINER_PYTHONS = ("/usr/bin/python3", "/opt/miniconda3/bin/python3", "/usr/local/bin/python3")
+
+
+def apply_patch_source() -> str:
+    """The ``apply_patch`` script, without its ``#!`` line."""
+    return (Path(__file__).parent / "apply_patch.py").read_text("utf-8")
+
+
+def _install_script(python: str) -> str:
+    return f"#!{python}\n{apply_patch_source()}"
 
 
 class WorkspaceError(RuntimeError):
@@ -72,9 +103,15 @@ class LocalWorkspace:
         self.root = Path(tempfile.mkdtemp(prefix=f"steproute-replay-{task.id}-", dir=workdir))
         self.path = self.root / "repo"
         shutil.copytree(task.repo, self.path, ignore=shutil.ignore_patterns("__pycache__", ".git"))
+        # apply_patch in a private bin directory beside the repository, run by this Python.
+        bindir = self.root / "bin"
+        bindir.mkdir()
+        tool = bindir / "apply_patch"
+        tool.write_text(_install_script(sys.executable), "utf-8")
+        tool.chmod(0o755)
         self.env = {
             **SAFE_ENV,
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "PATH": os.pathsep.join([str(bindir), os.environ.get("PATH", "/usr/bin:/bin")]),
             "HOME": str(self.root),
         }
         for cmd in (
@@ -146,6 +183,7 @@ class DockerWorkspace:
             ) from None
         if r.timed_out or r.returncode != 0:
             raise WorkspaceError(f"could not start the task container: {r.output.strip()[:300]}")
+        self._install_apply_patch()
         base = self.execute(
             f"git {' '.join(_GIT_IDENT)} add -A && git {' '.join(_GIT_IDENT)} commit -q "
             "--allow-empty -m base",
@@ -154,6 +192,28 @@ class DockerWorkspace:
         if base.returncode != 0:
             self.close()
             raise WorkspaceError("could not commit the container's starting state")
+
+    def _install_apply_patch(self) -> None:
+        """Write ``apply_patch`` to ``APPLY_PATCH_PATH`` in the container, run by the first
+        interpreter of ``_CONTAINER_PYTHONS`` it has. Plain ``sh``, without the image's
+        ``.bashrc``, so the task's environment plays no part."""
+        tries = " ".join(_CONTAINER_PYTHONS)
+        target = APPLY_PATCH_PATH
+        script = (
+            f'py=; for p in {tries}; do if [ -x "$p" ]; then py=$p; break; fi; done; '
+            'if [ -z "$py" ]; then py="/usr/bin/env python3"; fi; '
+            f"mkdir -p {Path(target).parent} && "
+            f'{{ echo "#!$py"; cat; }} > {target} && chmod 755 {target}'
+        )
+        cmd = [self.docker, "exec", "-i", self.name, "sh", "-c", script]
+        try:
+            r = run_command(cmd, cwd=_NEUTRAL_CWD, timeout_s=120, stdin=apply_patch_source())
+        except OSError as exc:
+            self.close()
+            raise WorkspaceError(f"could not install apply_patch: {type(exc).__name__}") from None
+        if r.timed_out or r.returncode != 0:
+            self.close()
+            raise WorkspaceError(f"could not install apply_patch: {r.output.strip()[:300]}")
 
     def execute(self, command: str, *, timeout_s: float) -> ExecResult:
         envs = [

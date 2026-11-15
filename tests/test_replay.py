@@ -536,6 +536,48 @@ def test_pilot_report_on_mock_data_is_marked_mock(tmp_path: Path, mock: Any) -> 
     assert "| anthropic | 2026-" in md or "| anthropic | " in md
 
 
+def test_pilot_report_names_each_configurations_scaffold_and_flags_a_mix(
+    tmp_path: Path, mock: Any
+) -> None:
+    from steproute.replay.plan import build_named_plan
+    from steproute.replay.report import pilot_report
+    from steproute.tasks.estimate import load_assumptions
+    from steproute.tasks.manifest import load_manifest
+
+    mock.set_responder(ScriptedAgent())
+    plan, manifest = build(tmp_path, [LOCAL, HAIKU])
+    out = tmp_path / "out"
+    runner(plan, manifest, config_for(mock), out, environ=environ_with("anthropic")).run(
+        execute=True
+    )
+    # one finished run of the local configuration as an older scaffold recorded it
+    journal = out / "runs.jsonl"
+    recs = [json.loads(x) for x in journal.read_text("utf-8").splitlines()]
+    local = {r["run_id"] for r in recs if r["kind"] == "start" and r["cell"]["model"] == LOCAL[0]}
+    end = next(r for r in recs if r["kind"] == "end" and r["run_id"] in local)
+    assert end["scaffold"] == "steproute-bash-2"
+    end["scaffold"] = "steproute-bash-1"
+    journal.write_text("".join(json.dumps(r) + "\n" for r in recs), "utf-8")
+    cat = load_default_catalog()
+    m = load_manifest(MANIFEST)
+    a = load_assumptions()
+    md = pilot_report(
+        out,
+        catalog=cat,
+        manifest=m,
+        pilot=build_named_plan("pilot", m, cat, a),
+        sparse=build_named_plan("sparse", m, cat, a),
+    )
+    assert "| Missing usage | Scaffold |" in md
+
+    def row(config: tuple[str, str]) -> str:
+        return next(x for x in md.splitlines() if x.startswith(f"| {config[0]} | {config[1]} |"))
+
+    assert row(HAIKU).endswith("| steproute-bash-2 |")
+    assert row(LOCAL).endswith("| MIXED: steproute-bash-1 (1), steproute-bash-2 (2) |")
+    assert f"more than one scaffold (their rows mix both; compare with care): {LOCAL[0]}" in md
+
+
 def test_threads_left_behind_are_daemons() -> None:
     assert all(
         t.daemon or t is threading.main_thread() for t in threading.enumerate() if t.is_alive()

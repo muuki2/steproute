@@ -48,6 +48,10 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# Installed as the apply_patch command in task images that run Python 3.6: no f-strings.
+"src/steproute/replay/apply_patch.py" = ["UP031", "UP032"]
+
 [tool.mypy]
 files = [
     "src/steproute/core",
@@ -60,6 +64,15 @@ files = [
     "src/steproute/baselines",
 ]
 strict = true
+
+# Installed as the apply_patch command in task images that run Python 3.6, so written
+# without annotations; its tests run it as a command.
+[[tool.mypy.overrides]]
+module = ["steproute.replay.apply_patch"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disable_error_code = ["var-annotated"]
 
 [[tool.mypy.overrides]]
 module = ["pyarrow", "pyarrow.*"]

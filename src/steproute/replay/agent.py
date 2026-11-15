@@ -13,7 +13,12 @@ decision 1, says why it is ours and not mini-SWE-agent itself):
   (the rest of that output is the submitted patch), at the step limit, or after three replies
   in a row without a usable tool call;
 * a reply whose tool call the provider itself could not parse (``ChatReply.unreadable``: Ollama
-  fails the request instead of returning it) is handled as a reply with invalid JSON arguments.
+  fails the request instead of returning it) is handled as a reply with invalid JSON arguments;
+* tool-call arguments that are not valid JSON are quoted back in the format error, with the
+  parser's error, and never kept in the history (the same for every provider).
+
+The workspace also offers an ``apply_patch`` command (``steproute.replay.apply_patch``); the
+prompt does not mention it.
 
 The scaffold only sees two small interfaces: a ``ChatClient`` (one model call; the runner's
 client enforces every limit and cap) and a ``Workspace``. Another scaffold can be swapped in
@@ -36,8 +41,10 @@ __all__ = [
     "BashAgent",
     "ChatClient",
     "ChatReply",
+    "RejectedCall",
     "RunStopped",
     "Scaffold",
+    "invalid_json_error",
 ]
 
 SUBMIT_MARKER = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
@@ -117,6 +124,12 @@ After submitting you cannot continue working on the task.
 
 INVALID_JSON = "the arguments are not valid JSON"
 
+#: The most characters of rejected arguments quoted back to the model.
+QUOTE_MAX_CHARS = 2000
+
+#: The shape the arguments must have, said after invalid JSON.
+ARGUMENTS_SHAPE = 'The arguments must be one JSON object whose "command" is a single string.'
+
 FORMAT_ERROR = (
     "Tool call error: {error}\n\n"
     "Every response must call the `bash` tool at least once, with arguments "
@@ -136,16 +149,54 @@ class RunStopped(Exception):
 
 
 @dataclass(frozen=True)
+class RejectedCall:
+    """Tool-call arguments a provider could not parse, as its error answer quoted them.
+
+    ``length``: the length of the arguments the provider sent, when the proxy cut them."""
+
+    arguments: str
+    parser_error: str
+    length: int | None = None
+
+
+@dataclass(frozen=True)
 class ChatReply:
     """The assistant message of one call (OpenAI shape: ``content`` and ``tool_calls``).
 
     ``unreadable``: the model replied with a tool call the provider could not parse and failed
     the request, so the reply itself is lost (``message`` is empty). The scaffold treats it as
-    a tool call with invalid JSON arguments."""
+    a tool call with invalid JSON arguments. ``rejected``: those arguments and the provider's
+    parser error, when its answer quoted them."""
 
     message: Mapping[str, Any]
     finish_reason: str | None = None
     unreadable: bool = False
+    rejected: RejectedCall | None = None
+
+
+def invalid_json_error(
+    arguments: str | None, parser_error: str | None, length: int | None = None
+) -> str:
+    """The format error for tool-call arguments that are not valid JSON: the arguments the
+    model sent (cut to ``QUOTE_MAX_CHARS``), the parser's error and the shape they must have.
+    The same text for every provider: the parser error is the provider's when it rejected the
+    call (Ollama), else Python's ``json`` error. ``arguments = None``: the provider gave none."""
+    if arguments is None:
+        return f"{INVALID_JSON} (the provider did not return them). {ARGUMENTS_SHAPE}"
+    total = max(len(arguments), length or 0)
+    shown = arguments[:QUOTE_MAX_CHARS]
+    lines = [
+        f"{INVALID_JSON}.",
+        f"Parser error: {parser_error or 'unknown'}",
+        "Your arguments were:",
+        "<arguments>",
+        shown,
+        "</arguments>",
+    ]
+    if total > len(shown):
+        lines.append(f"(cut: the first {len(shown):,} of {total:,} characters are shown)")
+    lines.append(ARGUMENTS_SHAPE)
+    return "\n".join(lines)
 
 
 class ChatClient(Protocol):
@@ -189,7 +240,10 @@ def _observation(output: str, returncode: int | None, limit: int) -> str:
 class BashAgent:
     """The default scaffold (see the module docstring)."""
 
-    name = "steproute-bash-1"
+    #: ``steproute-bash-2`` since issue 75: invalid JSON arguments are quoted back to the model
+    #: and left out of the history, and the workspace has an ``apply_patch`` command. Runs
+    #: finished before keep ``steproute-bash-1`` in the journal.
+    name = "steproute-bash-2"
 
     def __init__(
         self,
@@ -227,13 +281,25 @@ class BashAgent:
             if reply.unreadable:
                 # The reply is lost. An assistant turn with empty content and no tool call keeps
                 # the roles alternating (user or tool, assistant, user), the same shape an empty
-                # reply has; the format error after it names the invalid arguments.
+                # reply has; the format error after it quotes the invalid arguments when the
+                # provider's answer gave them.
                 msg: dict[str, Any] = {"role": "assistant", "content": ""}
                 commands: list[tuple[str, str]] = []
-                error: str | None = INVALID_JSON
+                rej = reply.rejected
+                error: str | None = (
+                    invalid_json_error(rej.arguments, rej.parser_error, rej.length)
+                    if rej is not None
+                    else invalid_json_error(None, None)
+                )
             else:
                 msg = self._message(reply.message)
-                commands, error = self._parse(msg.get("tool_calls", []))
+                commands, error, invalid = self._parse(msg.get("tool_calls", []))
+                if invalid:
+                    # Arguments that are not valid JSON do not go back into the history: a
+                    # strict provider rejects the next request over them (Ollama; LiteLLM's
+                    # Anthropic conversion parses them). The format error quotes them instead,
+                    # so the turn has the shape of the unreadable reply above, with its text.
+                    msg = {"role": "assistant", "content": msg.get("content") or ""}
             messages.append(msg)
             if error is not None:
                 format_errors += 1
@@ -283,19 +349,23 @@ class BashAgent:
         return msg
 
     @staticmethod
-    def _parse(calls: Sequence[Mapping[str, Any]]) -> tuple[list[tuple[str, str]], str | None]:
+    def _parse(
+        calls: Sequence[Mapping[str, Any]],
+    ) -> tuple[list[tuple[str, str]], str | None, bool]:
+        """The commands, or the format error; the flag says the error is invalid JSON."""
         if not calls:
-            return [], "no tool call found in the response"
+            return [], "no tool call found in the response", False
         out = []
         for c in calls:
             fn = c.get("function") or {}
             if fn.get("name") != "bash":
-                return [], f"unknown tool {fn.get('name')!r}"
+                return [], f"unknown tool {fn.get('name')!r}", False
+            raw = fn.get("arguments") or ""
             try:
-                args = json.loads(fn.get("arguments") or "")
-            except ValueError:
-                return [], INVALID_JSON
+                args = json.loads(raw)
+            except ValueError as exc:
+                return [], invalid_json_error(str(raw), str(exc)), True
             if not isinstance(args, dict) or not isinstance(args.get("command"), str):
-                return [], "missing 'command' argument"
+                return [], "missing 'command' argument", False
             out.append((str(c.get("id")), args["command"]))
-        return out, None
+        return out, None, False

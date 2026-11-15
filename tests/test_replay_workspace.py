@@ -16,7 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from steproute.replay.workspace import SAFE_ENV, DockerWorkspace, LocalWorkspace
+from steproute.replay.workspace import (
+    APPLY_PATCH_PATH,
+    SAFE_ENV,
+    DockerWorkspace,
+    LocalWorkspace,
+    apply_patch_source,
+)
 from steproute.tasks.check import GIT_LOCAL_ENV_VARS, workspace_env
 from steproute.tasks.manifest import load_manifest
 
@@ -88,8 +94,9 @@ def test_local_workspace_commands_see_only_a_fixed_environment(
 _FAKE_DOCKER = """\
 import json, os, sys
 log = {log!r}
+stdin = sys.stdin.read() if "-i" in sys.argv[1:3] else None
 with open(log, "a") as f:
-    f.write(json.dumps({{"argv": sys.argv[1:], "cwd": os.getcwd(),
+    f.write(json.dumps({{"argv": sys.argv[1:], "cwd": os.getcwd(), "stdin": stdin,
         "git_env": sorted(k for k in os.environ if k in {names!r})}}) + "\\n")
 if sys.argv[1] == "run":
     print("container-id")
@@ -123,12 +130,37 @@ def test_docker_workspace_command_lines_and_environment(
     assert verbs[0] == "run" and verbs[-1] == "rm" and "exec" in verbs
     run = calls[0]["argv"]
     assert run[:3] == ["run", "-d", "--rm"] and "--network" in run and "none" in run
+    # apply_patch goes in first, on the image's PATH outside /testbed, through plain sh
+    install = calls[1]["argv"]
+    assert install[:3] == ["exec", "-i", ws.name] and install[3:5] == ["sh", "-c"]
+    assert f"> {APPLY_PATCH_PATH}" in install[5] and "/usr/bin/python3" in install[5]
+    assert calls[1]["stdin"] == apply_patch_source()
+    assert not APPLY_PATCH_PATH.startswith("/testbed")
     for c in calls:
         assert c["git_env"] == []  # the docker CLI never sees GIT_DIR
         assert not Path(c["cwd"]).resolve().is_relative_to(repo_root)
         assert secret not in json.dumps(c["argv"])
-        if c["argv"][0] == "exec":
+        if c["argv"][0] == "exec" and c is not calls[1]:
             forwarded = {
                 c["argv"][i + 1].split("=", 1)[0] for i, a in enumerate(c["argv"]) if a == "-e"
             }
             assert forwarded == {*SAFE_ENV, "BASH_ENV"}
+
+
+def test_local_workspace_has_apply_patch_outside_the_repository() -> None:
+    ws = LocalWorkspace(load_manifest(MANIFEST).get("add-a"))
+    try:
+        patch = (
+            "*** Begin Patch\n*** Update File: calc.py\n@@ def add(a, b):\n"
+            "-    return a - b\n+    return a + b\n*** End Patch\n"
+        )
+        r = ws.execute(f"apply_patch <<'PATCH'\n{patch}PATCH", timeout_s=30)
+        assert r.returncode == 0, r.output
+        assert "M calc.py" in r.output
+        where = ws.execute("command -v apply_patch", timeout_s=30).output.strip()
+        diff = ws.diff()
+    finally:
+        ws.close()
+    assert not Path(where).is_relative_to(ws.path)
+    # the change is in the diff, the command is not
+    assert "+    return a + b" in diff and "apply_patch" not in diff
