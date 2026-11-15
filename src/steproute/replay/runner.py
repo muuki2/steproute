@@ -211,16 +211,35 @@ def describe_plan(
     environ: Mapping[str, str],
     now: float,
     ledger_note: str = "",
+    retry_errors: bool = False,
 ) -> str:
     """The plan, the estimated spend per provider with its range, the caps, month-to-date
     spend (from the shared ledger: every output directory) and the key status (set or not
-    set, never the value)."""
-    done = {a.cell for a in journal.finished()} if journal else set()
-    pending = [s for s in plan.specs if s.cell not in done]
+    set, never the value).
+
+    "To run" is what ``Runner._pending`` runs: cells not finished (``_done``), and the
+    given-up cells (``given_up``) only with ``retry_errors``; without it they are counted on
+    their own and left out of the order and the estimates."""
+    cells = journal.by_cell() if journal else {}
+    mr = config.limits.max_retries
+    pending: list[RunSpec] = []
+    finished = gave_up = 0
+    for s in plan.specs:
+        attempts = cells.get(s.cell, [])
+        if not attempts or not _done(attempts, mr):
+            pending.append(s)
+        elif given_up(attempts, mr):
+            if retry_errors:
+                pending.append(s)
+            else:
+                gave_up += 1
+        else:
+            finished += 1
     lines = [
         f"plan {plan.name}: {plan.description}",
-        f"  runs: {len(plan.specs)} in the plan, {len(plan.specs) - len(pending)} finished, "
-        f"{len(pending)} to run",
+        f"  runs: {len(plan.specs)} in the plan, {finished} finished, "
+        + (f"{gave_up} given up, " if gave_up else "")
+        + f"{len(pending)} to run",
         "",
         "  order (cheapest first; configuration-major):",
     ]
@@ -548,17 +567,7 @@ class Runner:
             Ledger(self.ledger_path, clock=self.deps.clock) if self.ledger_path.exists() else None
         )
         missing = missing_keys(self.plan, self.config, self.deps.environ)
-        text = describe_plan(
-            self.plan,
-            self.catalog,
-            self.config,
-            ledger=ledger,
-            journal=journal,
-            environ=self.deps.environ,
-            now=now,
-            ledger_note=f"{self.ledger_path} ({self.ledger_source})"
-            + ("" if ledger is not None else "; not created yet: nothing spent"),
-        )
+        text = self._describe(journal, ledger, now)
         if not execute:
             self.say(text)
             note = self._given_up_note(journal)
@@ -594,9 +603,23 @@ class Runner:
                 mirror=self.out / "ledger.jsonl",
             )
             try:
-                return self._run_locked(text)
+                return self._run_locked()
             finally:
                 self.ledger.close()  # releases what this runner still holds
+
+    def _describe(self, journal: Journal | None, ledger: Ledger | None, now: float) -> str:
+        return describe_plan(
+            self.plan,
+            self.catalog,
+            self.config,
+            ledger=ledger,
+            journal=journal,
+            environ=self.deps.environ,
+            now=now,
+            retry_errors=self.retry_errors,
+            ledger_note=f"{self.ledger_path} ({self.ledger_source})"
+            + ("" if ledger is not None else "; not created yet: nothing spent"),
+        )
 
     def _given_up_note(self, journal: Journal | None) -> str:
         """How many cells of the plan were given up after their retries, and what happens to
@@ -639,7 +662,7 @@ class Runner:
             + ("" if self.config.path is None else f" --config {self.config.path}")
         )
 
-    def _run_locked(self, text: str) -> int:
+    def _run_locked(self) -> int:
         assert self.ledger is not None
         with self.ledger.exclusive():
             self.ledger.refresh()
@@ -682,7 +705,9 @@ class Runner:
             self.say(
                 f"ledger: {self.ledger.skipped_lines} unreadable line(s) skipped (torn writes)"
             )
-        self.say(text)
+        # Described again from the journal as it is now (runs in flight closed above), so the
+        # counts are what ``_pending`` runs.
+        self.say(self._describe(self.journal, self.ledger, self.deps.clock()))
         note = self._given_up_note(self.journal)
         if note:
             self.say(note)

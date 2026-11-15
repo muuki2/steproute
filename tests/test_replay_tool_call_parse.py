@@ -263,17 +263,34 @@ def test_retry_errors_runs_given_up_cells_again_and_only_with_the_option(
         capsys.readouterr().out
     )
 
+    # the plan text says what will run: the given-up cell is not "to run" without the option
+    # (and not in the order or the estimates), and is with it
+    without = "  runs: 2 in the plan, 1 finished, 1 given up, 0 to run"
+    with_option = "  runs: 2 in the plan, 1 finished, 1 to run"
+    order_line = f"    1. {LOCAL[0]}"
+    for retry, counts, in_order in ((False, without, False), (True, with_option, True)):
+        buf = io.StringIO()
+        dry = runner(plan, manifest, cfg, out, environ={}, stdout=buf, retry_errors=retry)
+        assert dry.run() == 0
+        text = buf.getvalue()
+        assert counts in text.splitlines()
+        assert (order_line in text) is in_order
+        assert ("   ollama        1 runs" in text) is in_order
+        assert ("   ollama        0 runs" in text) is not in_order
+
     # without the option: left alone, even with the provider healthy again
     broken["on"] = False
     buf = io.StringIO()
     assert runner(plan, manifest, cfg, out, environ={}, stdout=buf).run(execute=True) == 0
-    assert len(attempts()) == 3
+    assert len(attempts()) == 3  # nothing ran, as the start of the run said
+    assert without in buf.getvalue().splitlines()
     assert "given up: 1 cell(s)" in buf.getvalue() and "--retry-errors" in buf.getvalue()
 
     # with the option: one more attempt in the same journal, marked as a new round
     buf = io.StringIO()
     r = runner(plan, manifest, cfg, out, environ={}, stdout=buf, retry_errors=True)
     assert r.run(execute=True) == 0
+    assert with_option in buf.getvalue().splitlines()
     att = attempts()
     assert [a.status for a in att] == ["provider_error"] * 3 + ["passed"]
     assert att[-1].attempt == 4 and att[-1].start.get("retry_errors") is True
