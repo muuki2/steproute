@@ -31,7 +31,7 @@ from steproute.collectors.proxy.config import CheckConfig, ProxyConfig, Upstream
 from steproute.collectors.proxy.engine import Proxy
 from steproute.collectors.proxy.server import make_proxy_server
 from steproute.collectors.proxy.source import InProcessSource
-from steproute.collectors.proxy.upstream import UpstreamPool
+from steproute.collectors.proxy.upstream import TOOL_CALL_PARSE, UpstreamPool
 from steproute.core.catalog import Catalog
 from steproute.core.cost import AttemptUsage, price_usage
 from steproute.core.offpeak import FLAT, OFFPEAK, PeakHours, call_period, fmt_instant
@@ -414,7 +414,11 @@ class ProxyChatClient:
             obj = {}
         return resp.status, hdrs, obj if isinstance(obj, dict) else {}
 
-    def _verify(self, headers: Mapping[str, str], outcome: Outcome | None) -> None:
+    def _verify(
+        self, headers: Mapping[str, str], outcome: Outcome | None, *, answered: bool = True
+    ) -> None:
+        """``answered = False``: an error answer, which names no executed model; the mode and
+        the decision are still checked."""
         mode = headers.get("x-steproute-mode")
         model = headers.get("x-steproute-model")
         effort = headers.get("x-steproute-effort")
@@ -422,7 +426,7 @@ class ProxyChatClient:
         problems = []
         if mode != "route":
             problems.append(f"proxy mode {mode!r} (expected 'route')")
-        if (model, effort) != planned:
+        if answered and (model, effort) != planned:
             problems.append(f"executed {model} ({effort})")
         if outcome is not None and outcome.final_model not in (None, self.spec.model):
             problems.append(f"outcome final_model {outcome.final_model}")
@@ -493,12 +497,14 @@ class ProxyChatClient:
                 first = choices[0] if isinstance(choices[0], Mapping) else {}
                 message = first.get("message") if isinstance(first.get("message"), Mapping) else {}
                 return ChatReply(dict(message or {}), first.get("finish_reason"))
+            err = obj.get("error") if isinstance(obj.get("error"), Mapping) else {}
+            kind = str((err or {}).get("type", ""))
+            if status == 500 and (err or {}).get("upstream_kind") == TOOL_CALL_PARSE:
+                return self._unreadable(headers, intent, period, latency)
             # An error answer: the provider either refused before doing work (not billed) or
             # timed out (possibly billed): a timeout is charged at the worst case.
             if headers.get("x-steproute-decision-id"):
                 self.failed_decisions.append(headers["x-steproute-decision-id"])
-            err = obj.get("error") if isinstance(obj.get("error"), Mapping) else {}
-            kind = str((err or {}).get("type", ""))
             timeout = status in (408, 504)
             usd = self.worst_call if timeout else 0.0
             if intent is not None and self.ledger is not None:
@@ -533,6 +539,26 @@ class ProxyChatClient:
             raise RunStopped(
                 "provider_error", f"provider answered HTTP {status} ({kind or 'error'})"
             )
+
+    def _unreadable(
+        self, headers: Mapping[str, str], intent: Any, period: str, latency: float
+    ) -> ChatReply:
+        """The model wrote a tool call the provider could not parse, and the provider failed
+        the request instead of returning the reply (Ollama: HTTP 500 "error parsing tool
+        call"). That is the model's step, not a provider failure: the call is recorded, with
+        its usage unknown (charged the worst case, which is zero for a local model), and the
+        scaffold gets an unreadable reply. Not retried: a retry would hide the model's mistake.
+        The step's decision is labelled with the run's result like any other step."""
+        did = headers.get("x-steproute-decision-id")
+        flags = ["missing_usage", TOOL_CALL_PARSE]
+        usd = self.worst_call
+        if intent is not None and self.ledger is not None:
+            self.ledger.settle(intent, usd, flags, period=period, list_usd=usd)
+        self._charged(usd, usd)
+        rec = CallRecord(did, usd, flags, period=period, list_usd=usd, latency_ms=latency)
+        self.calls.append(rec)
+        self._verify(headers, None, answered=False)
+        return ChatReply({}, None, unreadable=True)
 
     def _charged(self, usd: float, list_usd: float) -> None:
         self.spent += usd

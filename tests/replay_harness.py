@@ -182,6 +182,7 @@ def runner(
     *,
     environ: dict[str, str],
     stdout: Any = None,
+    retry_errors: bool = False,
     **deps: Any,
 ) -> Runner:
     import io
@@ -195,6 +196,7 @@ def runner(
         manifest=manifest,
         out=out,
         deps=RunnerDeps(environ=environ, out=stdout or io.StringIO(), sleep=lambda s: None, **deps),
+        retry_errors=retry_errors,
     )
 
 

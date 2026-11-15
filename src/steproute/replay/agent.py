@@ -11,7 +11,9 @@ decision 1, says why it is ours and not mini-SWE-agent itself):
   output comes back as a ``tool`` message, cut to its head and tail above 10,000 characters;
 * the run ends when a command's output starts with ``COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT``
   (the rest of that output is the submitted patch), at the step limit, or after three replies
-  in a row without a usable tool call.
+  in a row without a usable tool call;
+* a reply whose tool call the provider itself could not parse (``ChatReply.unreadable``: Ollama
+  fails the request instead of returning it) is handled as a reply with invalid JSON arguments.
 
 The scaffold only sees two small interfaces: a ``ChatClient`` (one model call; the runner's
 client enforces every limit and cap) and a ``Workspace``. Another scaffold can be swapped in
@@ -113,6 +115,8 @@ commands:
 After submitting you cannot continue working on the task.
 </instructions>"""
 
+INVALID_JSON = "the arguments are not valid JSON"
+
 FORMAT_ERROR = (
     "Tool call error: {error}\n\n"
     "Every response must call the `bash` tool at least once, with arguments "
@@ -133,10 +137,15 @@ class RunStopped(Exception):
 
 @dataclass(frozen=True)
 class ChatReply:
-    """The assistant message of one call (OpenAI shape: ``content`` and ``tool_calls``)."""
+    """The assistant message of one call (OpenAI shape: ``content`` and ``tool_calls``).
+
+    ``unreadable``: the model replied with a tool call the provider could not parse and failed
+    the request, so the reply itself is lost (``message`` is empty). The scaffold treats it as
+    a tool call with invalid JSON arguments."""
 
     message: Mapping[str, Any]
     finish_reason: str | None = None
+    unreadable: bool = False
 
 
 class ChatClient(Protocol):
@@ -215,23 +224,17 @@ class BashAgent:
                 return AgentResult("step_limit", None, steps, messages)
             reply = client.complete(messages, [BASH_TOOL])
             steps += 1
-            msg: dict[str, Any] = {"role": "assistant", "content": reply.message.get("content")}
-            calls = reply.message.get("tool_calls") or []
-            if calls:
-                msg["tool_calls"] = [
-                    {
-                        "id": c.get("id"),
-                        "type": "function",
-                        "function": {
-                            "name": c.get("function", {}).get("name"),
-                            "arguments": c.get("function", {}).get("arguments") or "",
-                        },
-                    }
-                    for c in calls
-                    if isinstance(c, Mapping)
-                ]
+            if reply.unreadable:
+                # The reply is lost. An assistant turn with empty content and no tool call keeps
+                # the roles alternating (user or tool, assistant, user), the same shape an empty
+                # reply has; the format error after it names the invalid arguments.
+                msg: dict[str, Any] = {"role": "assistant", "content": ""}
+                commands: list[tuple[str, str]] = []
+                error: str | None = INVALID_JSON
+            else:
+                msg = self._message(reply.message)
+                commands, error = self._parse(msg.get("tool_calls", []))
             messages.append(msg)
-            commands, error = self._parse(msg.get("tool_calls", []))
             if error is not None:
                 format_errors += 1
                 for c in msg.get("tool_calls", []):
@@ -261,6 +264,25 @@ class BashAgent:
                 )
 
     @staticmethod
+    def _message(reply: Mapping[str, Any]) -> dict[str, Any]:
+        msg: dict[str, Any] = {"role": "assistant", "content": reply.get("content")}
+        calls = reply.get("tool_calls") or []
+        if calls:
+            msg["tool_calls"] = [
+                {
+                    "id": c.get("id"),
+                    "type": "function",
+                    "function": {
+                        "name": c.get("function", {}).get("name"),
+                        "arguments": c.get("function", {}).get("arguments") or "",
+                    },
+                }
+                for c in calls
+                if isinstance(c, Mapping)
+            ]
+        return msg
+
+    @staticmethod
     def _parse(calls: Sequence[Mapping[str, Any]]) -> tuple[list[tuple[str, str]], str | None]:
         if not calls:
             return [], "no tool call found in the response"
@@ -272,7 +294,7 @@ class BashAgent:
             try:
                 args = json.loads(fn.get("arguments") or "")
             except ValueError:
-                return [], "the arguments are not valid JSON"
+                return [], INVALID_JSON
             if not isinstance(args, dict) or not isinstance(args.get("command"), str):
                 return [], "missing 'command' argument"
             out.append((str(c.get("id")), args["command"]))

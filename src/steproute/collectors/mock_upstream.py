@@ -66,6 +66,9 @@ class Reply:
     #: The tool call's id; ``None`` keeps the fixed ``toolu_mock_1`` / ``call_mock_1``. A
     #: scripted agent loop that keeps every call in its history needs distinct ids.
     tool_id: str | None = None
+    #: ``"error"`` on chat completions: the ``error`` object of the body, in place of the
+    #: default one (Ollama's answers carry only a ``message``).
+    error_body: dict[str, Any] | None = None
 
 
 @dataclass
@@ -141,10 +144,12 @@ class _Handler(BaseHTTPRequestHandler):
         if not self.path.rstrip("/").endswith("/chat/completions"):
             return self._json(404, {"error": {"message": "not found"}})
         if reply.kind == "error":
-            return self._json(
-                reply.status,
-                {"error": {"message": "scripted failure", "type": "mock", "code": reply.status}},
-            )
+            error = reply.error_body or {
+                "message": "scripted failure",
+                "type": "mock",
+                "code": reply.status,
+            }
+            return self._json(reply.status, {"error": error})
         model = str(body.get("model", "mock"))
         if body.get("stream"):
             return self._stream(reply, model, body)

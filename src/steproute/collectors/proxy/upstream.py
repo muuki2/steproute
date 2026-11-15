@@ -32,6 +32,7 @@ from steproute.collectors.proxy.config import UpstreamConfig
 __all__ = [
     "EPHEMERAL",
     "OFFLINE_ENV",
+    "TOOL_CALL_PARSE",
     "Prepared",
     "UpstreamError",
     "UpstreamPool",
@@ -91,10 +92,40 @@ class UpstreamError(Exception):
         self.kind = kind
 
 
+#: The error kind of an upstream that failed the whole request because it could not parse the
+#: tool call the model wrote. Ollama (0.40.x, ``/v1/chat/completions``) answers HTTP 500 with
+#: ``{"error": {"message": "error parsing tool call: raw='...', err=..."}}`` where another
+#: provider returns the reply with unparseable arguments. The message carries the model's raw
+#: output, so it is not kept: the error's text is a fixed sentence (``docs/PROXY.md``).
+TOOL_CALL_PARSE = "tool_call_parse"
+_TOOL_CALL_PARSE_PREFIX = "error parsing tool call"
+
+
+def _upstream_message(exc: Exception) -> str:
+    """The provider's own error message: the OpenAI SDK (and LiteLLM's exceptions built on it)
+    keeps the parsed ``error`` object of the answer as ``body``."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, Mapping):
+        inner = body.get("error")
+        msg = inner.get("message") if isinstance(inner, Mapping) else body.get("message")
+        if isinstance(msg, str):
+            return msg
+    # Without a body, LiteLLM's text is "<prefix>Exception - <provider message>".
+    text = str(exc)
+    cut = text.find(f" - {_TOOL_CALL_PARSE_PREFIX}")
+    return text[cut + 3 :] if cut >= 0 else ""
+
+
 def _as_error(exc: Exception) -> UpstreamError:
     status = getattr(exc, "status_code", None)
     if not isinstance(status, int) or not 400 <= status <= 599:
         status = 504 if "timeout" in type(exc).__name__.lower() else 502
+    if status == 500 and _upstream_message(exc).lstrip().startswith(_TOOL_CALL_PARSE_PREFIX):
+        return UpstreamError(
+            status,
+            TOOL_CALL_PARSE,
+            "the upstream could not parse the model's tool call (its text is not kept)",
+        )
     return UpstreamError(status, type(exc).__name__, str(exc)[:500])
 
 

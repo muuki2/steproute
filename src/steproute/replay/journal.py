@@ -38,8 +38,9 @@ __all__ = [
 #: Run statuses. Labelled outcomes (the model did it): ``passed`` (``success = true``) and
 #: ``failed``, ``run_cap``, ``step_limit``, ``context_limit``, ``wall_time`` (``false``).
 #: Unlabelled (``success = null``, never a model failure): ``provider_error``, ``infra_error``,
-#: ``interrupted`` (all retried, with a bound), ``blocked_sensitive`` and ``config_mismatch``
-#: (never retried: the same thing would happen again).
+#: ``interrupted`` (all retried, with a bound; a ``provider_error`` or ``infra_error`` past it is
+#: given up, until ``resume --retry-errors`` starts a new round), ``blocked_sensitive`` and
+#: ``config_mismatch`` (never retried: the same thing would happen again).
 #: Deferred (``success = null``, the cell stays pending, not retried in this invocation and
 #: not counted against ``max_retries``; a later resume runs it again): ``budget_stop`` (the run
 #: reached a reduced budget given from the provider's last headroom) and ``balance_stop`` (the

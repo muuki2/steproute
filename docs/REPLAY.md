@@ -14,13 +14,14 @@ steproute replay preflight --plan pilot --out DIR [--config ...] [--env-file F] 
 steproute replay run       --plan pilot --out DIR [--config ...] [--env-file F]   # a DRY RUN, the same as `plan`
 steproute replay run       --plan pilot --out DIR --config replay.toml --execute   # the real run
 steproute replay resume    --out DIR --execute                     # continue the plan recorded in DIR
-steproute replay status    --out DIR                               # attempts, statuses, spend per month (this directory and all)
+steproute replay resume    --out DIR --execute --retry-errors      # the same, and run the given-up cells again
+steproute replay status    --out DIR                               # attempts, statuses, given-up cells, spend per month
 steproute replay report    --out DIR [--md docs/results/pilot.md]  # the pilot report
 steproute replay ledger show   [--config ...]                      # the shared spend ledger: where, spend, reservations
 steproute replay ledger import --out DIR [--config ...]            # bring DIR's own ledger.jsonl into the shared ledger, once
 ```
 
-`--env-file` also works on `resume`; see "Keys" below. Every command takes `--ledger PATH` to use another shared ledger (see "The spend ledger").
+`--env-file` also works on `resume`; see "Keys" below. `--retry-errors` (on `resume` only) runs again the cells that were given up: their last attempt ended as `provider_error` or `infra_error` after `max_retries` retries, so they count as finished (see "Failure taxonomy and retries"). Every command takes `--ledger PATH` to use another shared ledger (see "The spend ledger").
 
 Exit codes of `run` and `resume`: `0` every cell finished; `4` some cells are still pending (a cap, the total budget or an out-of-funds answer stopped a provider; resume when there is budget); `3` a fatal stop (the executed configuration differed from the plan); `130` interrupted; `2` a configuration problem or a missing key (nothing ran); `1` from `preflight` when something required is missing.
 
@@ -189,7 +190,7 @@ It takes the directory's lock (it refuses while a runner is running there), adds
 
 ### 1. The scaffold: our own small loop with mini-SWE-agent's step shape
 
-`BashAgent` (`agent.py`) is about 200 lines: a system message and the task message, then a linear history that only grows; one structured `bash` tool; each command in a fresh subshell with a 60 s timeout; output cut to its head and tail above 10,000 characters; the run ends on `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` (the rest of that output is the patch), at 250 steps, or after three replies in a row without a usable tool call. It sits behind two small interfaces, `ChatClient` and `Workspace`, and implements `Scaffold`, so another scaffold can be swapped in.
+`BashAgent` (`agent.py`) is about 200 lines: a system message and the task message, then a linear history that only grows; one structured `bash` tool; each command in a fresh subshell with a 60 s timeout; output cut to its head and tail above 10,000 characters; the run ends on `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` (the rest of that output is the patch), at 250 steps, or after three replies in a row without a usable tool call. A reply without a usable tool call (none, an unknown tool, arguments that are not valid JSON, no `command`) is a counted step: the model gets a format-error message and the loop goes on. A tool call that the provider itself could not parse is the same step: Ollama fails the whole request (HTTP 500, `error parsing tool call: raw='...'`) instead of returning the reply, the proxy turns that into the error kind `tool_call_parse` (`docs/PROXY.md`), and the client hands the scaffold an unreadable reply. The model then gets the format error for invalid JSON, after an assistant turn with empty content and no tool call in the history: the reply itself is lost, an empty turn keeps the roles alternating for every chat template (user or tool, assistant, user), and it is the shape an empty reply already has. The call counts as a call with unknown usage (`calls_missing_usage`; charged the worst case, $0 for a local model) and is not retried. The rule is about the provider's answer, not a model name; before issue 71 such a call was a `provider_error`, which restarted the run and, after `max_retries`, left the cell without an outcome. The scaffold identifier stays `steproute-bash-1`: for a provider that returns the malformed call in the reply nothing changes, and the change of the Ollama case is noted with the pilot report. It sits behind two small interfaces, `ChatClient` and `Workspace`, and implements `Scaffold`, so another scaffold can be swapped in.
 
 *Rejected: mini-SWE-agent itself* (2.4.6, MIT, read from the PyPI wheel; details in `docs/INTEGRATION-NOTES.md` section 11). It reaches a custom endpoint through LiteLLM and uses structured tool calls, and its history is linear, all of which fit. What does not fit:
 - its cost tracking calls LiteLLM's cost map and raises when the cost is 0, which it is for every model name behind our proxy; the switch around that (`cost_tracking: ignore_errors`) also disables its `cost_limit`, so its own money guard would silently be off;
@@ -236,8 +237,8 @@ Two lanes run at once. The **local lane** is one thread: runs strictly one after
 |---|---|---|---|
 | `passed` / `failed` | The check ran on the submitted patch (failed includes a patch that does not apply, a test timeout, and no submission) | true / false | no |
 | `run_cap`, `step_limit`, `context_limit`, `wall_time` | The run hit a per-run limit | false (a labelled failure, as in the task-set estimate) | no |
-| `provider_error` | The provider answered an error (after up to `call_retries` retries of a 429 or 5xx inside the run) | null | yes, up to `max_retries` whole runs |
-| `infra_error` | Container, workspace, check harness or runner error | null | yes, up to `max_retries` |
+| `provider_error` | The provider answered an error (after up to `call_retries` retries of a 429 or 5xx inside the run). Not a tool call the provider could not parse (`tool_call_parse`): that is a format-error step of the model (decision 1) | null | yes, up to `max_retries` whole runs; then given up, until `resume --retry-errors` |
+| `infra_error` | Container, workspace, check harness or runner error | null | yes, up to `max_retries`; then given up, until `resume --retry-errors` |
 | `interrupted` | The runner stopped while the run was in flight | null | yes, on resume (counts toward `max_retries`) |
 | `blocked_sensitive` | The proxy's privacy rule refused to send the step to a cloud model | null | no (it would happen again) |
 | `config_mismatch` | What ran was not what was planned | null | no; the runner stops |
@@ -245,6 +246,8 @@ Two lanes run at once. The **local lane** is one thread: runs strictly one after
 | `balance_stop` | The provider answered HTTP 402 / insufficient balance; the provider is halted | null; **pending**, not in the grid | not now; a resume after funds are added |
 
 Only the first two rows are model outcomes. The last two leave the cell pending. The others are recorded in the grid with `success = null`, which the evaluator treats as unlabelled, never as a failure. A provider error that timed out is charged its worst case (the provider may have done the work); an error answered before any work is charged $0.
+
+**Given-up cells.** A cell whose last attempt is a `provider_error` or `infra_error` after `max_retries` retries counts as finished: it is in the grid with `success = null`, and a resume leaves it alone. `steproute replay status` prints how many cells are in that state, and the dry run and the start of a real run say so too. `steproute replay resume --out DIR --execute --retry-errors` runs each of them again, as further attempts in the same journal (`attempt` goes on counting, the grid's `meta.attempts` counts every attempt). The first attempt of the new round has `"retry_errors": true` on its start line, and `max_retries` counts from that attempt, so the cell gets `1 + max_retries` attempts again. A cell is re-opened at most once per invocation; if the new round is given up too, the cell is finished again until the next `--retry-errors`. Without the option nothing changes.
 
 ### 7. The pilot report
 
@@ -277,4 +280,5 @@ Everything below needs a paid provider, or more time on the real machine than is
 - **Real step counts and costs** of the 5.5 and 5.2 Claude models and the current DeepSeek models on this scaffold, which the pilot exists to measure.
 - **Wall time**: hours of unattended running, and the 2-hour per-run timeout (`run_timeout_s`; no real run came near it, the longest took under 4 minutes).
 - **The shared ledger under real, long runs.** Two runners in two directories on one ledger are tested with real processes against the mock (`tests/test_replay_shared_ledger.py`), as are a killed runner's reservation and a kill between intent and settle; two real runners side by side for hours, and the ledger on anything but a local disk, were not tried.
+- **Ollama's unparseable tool call against the real server** (issue 71). The answer was reproduced outside the runner on Ollama 0.40.16 (`/v1/chat/completions`, non-streaming); the runner's handling of it is tested only with the loopback mock sending the same status and body through LiteLLM's real `openai` provider. Whether Ollama's streaming endpoint, or another version, fails the same way is unknown.
 - **The proxy's privacy rule on real repositories.** Test fixtures in SWE-bench repositories may contain secret-shaped strings; a step that trips the detector is sent nowhere and the run ends `blocked_sensitive`. How often that happens is unknown.
