@@ -35,6 +35,11 @@ Selection (docs/TASKSET.md, "How the subset is drawn"):
    fixed by ``random.Random(f"{SEED}:replace:{broken id}")``. A candidate that then fails its
    own check (gold must pass, baseline must fail) is added to ``BROKEN`` and the next one is
    taken. The manifest keeps a record of every broken task.
+   Replacements are stable (issue 64): every pair that has been decided and checked is recorded
+   in ``REPLACEMENTS`` and used as it is. Only a broken id with no recorded pair is drawn, from
+   a pool that excludes every drawn task, every recorded replacement and every broken id, so
+   adding a broken id never moves a recorded replacement or a pilot task. Record the new pair
+   in ``REPLACEMENTS`` once the replacement has passed its check.
 """
 
 from __future__ import annotations
@@ -222,6 +227,33 @@ BROKEN: dict[str, str] = {
         "pytest-httpbin 'httpbin' fixture is recursive on the image's pytest 8.3.4 and the "
         "timeout tests need the network"
     ),
+    "matplotlib__matplotlib-20826": (
+        "the gold patch fails on the arm64 image: 3 of 673 PASS_TO_PASS tests fail "
+        "(test_imshow_clip[png], test_imshow_clip[pdf], test_contour_colorbar[png]: pandas "
+        "'Multi-dimensional indexing is no longer supported' in the image); same on a second run"
+    ),
+    "matplotlib__matplotlib-20859": (
+        "the gold patch fails on the arm64 image: 1 of 88 PASS_TO_PASS tests fails "
+        "(test_legend.py::test_warn_big_data_best_loc: DID NOT WARN); same on a second run"
+    ),
+    "sphinx-doc__sphinx-10435": (
+        "the gold patch fails on the arm64 image: the FAIL_TO_PASS test "
+        "tests/test_build_latex.py::test_latex_code_role fails on its LaTeX output assertion; "
+        "same on a second run"
+    ),
+}
+# Decided replacements: broken id -> the task that took its place (and passed its own check).
+# Once a pair is here it never moves, whatever is added to BROKEN later (issue 64). A broken
+# task with no entry gets a draw by ``replacement_order`` when the manifest is generated.
+REPLACEMENTS: dict[str, str] = {
+    "psf__requests-1921": "django__django-13401",
+    "psf__requests-1766": "sympy__sympy-16450",
+    "psf__requests-2317": "django__django-16139",
+    "psf__requests-2931": "sympy__sympy-15875",
+    "psf__requests-5414": "sympy__sympy-23950",
+    "matplotlib__matplotlib-20826": "django__django-12273",
+    "matplotlib__matplotlib-20859": "sympy__sympy-15809",
+    "sphinx-doc__sphinx-10435": "django__django-13568",
 }
 # Repositories whose tests reach the live network are never chosen as a replacement.
 NETWORK_REPOS = {"psf/requests"}
@@ -371,10 +403,14 @@ def replace_broken(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
     """Swap every drawn task listed in BROKEN for its replacement (module docstring, step 5).
     Returns the new full set, the new pilot and ``{broken id: replacement id}``."""
-    drawn = {t["id"] for t in full}
+    # Recorded replacements are decided: never redrawn, and never offered to another broken id.
+    drawn = {t["id"] for t in full} | set(REPLACEMENTS.values())
     swaps: dict[str, str] = {}
     for t in sorted(full, key=lambda t: t["id"]):
         if t["id"] not in BROKEN:
+            continue
+        if t["id"] in REPLACEMENTS:
+            swaps[t["id"]] = REPLACEMENTS[t["id"]]
             continue
         cands = replacement_order(t["id"], t["stratum"], universe, drawn)
         if not cands:
@@ -383,6 +419,9 @@ def replace_broken(
         drawn.add(cands[0]["id"])
         nxt = [c["id"] for c in cands[1:4]]
         print(f"replace {t['id']} ({t['stratum']}) by {cands[0]['id']}; next candidates: {nxt}")
+        print(
+            f"  once it passes its check, record it: REPLACEMENTS[{t['id']!r}] = {cands[0]['id']!r}"
+        )
     by_id = {t["id"]: t for t in universe}
 
     def swap(ts: list[dict[str, Any]]) -> list[dict[str, Any]]:

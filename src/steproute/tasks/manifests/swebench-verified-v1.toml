@@ -216,6 +216,13 @@ pilot = false
 image = "swebench/sweb.eval.arm64.django_1776_django-12262:latest"
 
 [[task]]
+id = "django__django-12273"
+stratum = "hard"
+fits32k = true
+pilot = false
+image = "swebench/sweb.eval.arm64.django_1776_django-12273:latest"
+
+[[task]]
 id = "django__django-12276"
 stratum = "medium"
 fits32k = true
@@ -298,6 +305,13 @@ stratum = "easy"
 fits32k = true
 pilot = false
 image = "ghcr.io/epoch-research/swe-bench.eval.arm64.django__django-13516:latest"
+
+[[task]]
+id = "django__django-13568"
+stratum = "hard"
+fits32k = true
+pilot = false
+image = "swebench/sweb.eval.arm64.django_1776_django-13568:latest"
 
 [[task]]
 id = "django__django-13658"
@@ -501,6 +515,8 @@ stratum = "hard"
 fits32k = false
 pilot = false
 image = "ghcr.io/epoch-research/swe-bench.eval.arm64.matplotlib__matplotlib-20826:latest"
+broken = "the gold patch fails on the arm64 image: 3 of 673 PASS_TO_PASS tests fail (test_imshow_clip[png], test_imshow_clip[pdf], test_contour_colorbar[png]: pandas 'Multi-dimensional indexing is no longer supported' in the image); same on a second run"
+replaced_by = "django__django-12273"
 
 [[task]]
 id = "matplotlib__matplotlib-20859"
@@ -508,6 +524,8 @@ stratum = "easy"
 fits32k = true
 pilot = false
 image = "swebench/sweb.eval.arm64.matplotlib_1776_matplotlib-20859:latest"
+broken = "the gold patch fails on the arm64 image: 1 of 88 PASS_TO_PASS tests fails (test_legend.py::test_warn_big_data_best_loc: DID NOT WARN); same on a second run"
+replaced_by = "sympy__sympy-15809"
 
 [[task]]
 id = "matplotlib__matplotlib-21568"
@@ -742,6 +760,8 @@ stratum = "hard"
 fits32k = false
 pilot = false
 image = "swebench/sweb.eval.arm64.sphinx-doc_1776_sphinx-10435:latest"
+broken = "the gold patch fails on the arm64 image: the FAIL_TO_PASS test tests/test_build_latex.py::test_latex_code_role fails on its LaTeX output assertion; same on a second run"
+replaced_by = "django__django-13568"
 
 [[task]]
 id = "sphinx-doc__sphinx-10466"
@@ -987,6 +1007,13 @@ stratum = "hard"
 fits32k = false
 pilot = true
 image = "swebench/sweb.eval.arm64.sympy_1776_sympy-15599:latest"
+
+[[task]]
+id = "sympy__sympy-15809"
+stratum = "easy"
+fits32k = true
+pilot = false
+image = "ghcr.io/epoch-research/swe-bench.eval.arm64.sympy__sympy-15809:latest"
 
 [[task]]
 id = "sympy__sympy-15875"

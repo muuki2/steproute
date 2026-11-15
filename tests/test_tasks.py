@@ -7,6 +7,7 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -116,6 +117,9 @@ def test_default_manifest_keeps_the_broken_tasks_out_of_the_set() -> None:
         "psf__requests-2317",
         "psf__requests-2931",
         "psf__requests-5414",
+        "matplotlib__matplotlib-20826",
+        "matplotlib__matplotlib-20859",
+        "sphinx-doc__sphinx-10435",
     }
     for old in m.broken_tasks:
         assert old.broken and old.pilot is False
@@ -126,6 +130,49 @@ def test_default_manifest_keeps_the_broken_tasks_out_of_the_set() -> None:
         assert not new.id.startswith("psf__")  # a repository whose tests reach the network
     assert m.get("psf__requests-1921").replaced_by == "django__django-13401"
     assert m.get("django__django-13401").pilot  # it took the pilot slot
+    assert m.get("matplotlib__matplotlib-20826").replaced_by == "django__django-12273"
+    assert m.get("matplotlib__matplotlib-20859").replaced_by == "sympy__sympy-15809"
+    assert m.get("sphinx-doc__sphinx-10435").replaced_by == "django__django-13568"
+
+
+def _select_taskset() -> object:
+    import importlib.util
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "select_taskset.py"
+    spec = importlib.util.spec_from_file_location("select_taskset_under_test", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_a_new_broken_id_moves_no_recorded_replacement_and_no_pilot_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue 64: replacements are stable. Adding a broken id draws only for itself."""
+    st: Any = _select_taskset()
+
+    def task(i: int) -> dict[str, Any]:
+        return {"id": f"r__r-{i:02d}", "repo": f"o/r{i % 3}", "stratum": "hard", "fits32k": True}
+
+    universe = [task(i) for i in range(30)]
+    full, pilot = universe[:10], universe[:2]
+    monkeypatch.setattr(st, "BROKEN", {"r__r-00": "x", "r__r-05": "x"})
+    monkeypatch.setattr(st, "REPLACEMENTS", {})
+    _, pilot1, swaps1 = st.replace_broken(full, pilot, universe)
+    # record the first pair, then add a third broken id that sorts before the others
+    monkeypatch.setattr(
+        st, "REPLACEMENTS", {"r__r-00": swaps1["r__r-00"], "r__r-05": swaps1["r__r-05"]}
+    )
+    monkeypatch.setattr(st, "BROKEN", {"r__r-00": "x", "r__r-05": "x", "r__r-01": "x"})
+    _, pilot2, swaps2 = st.replace_broken(full, pilot, universe)
+    assert swaps2["r__r-00"] == swaps1["r__r-00"] and swaps2["r__r-05"] == swaps1["r__r-05"]
+    new = swaps2["r__r-01"]
+    assert new not in swaps1.values() and new not in {t["id"] for t in full}
+    assert [t["id"] for t in pilot2][0] != "r__r-01"
+    assert [t["id"] for t in pilot2] == sorted([swaps2.get(t["id"], t["id"]) for t in pilot])
+    assert swaps1["r__r-00"] in {t["id"] for t in pilot1}
 
 
 def test_broken_tasks_are_not_counted_and_are_validated() -> None:

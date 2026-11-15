@@ -185,9 +185,9 @@ The manifest pins:
 - the experiments commit;
 - the seed.
 
-**Broken tasks (issue 58).** A task whose gold patch fails on its arm64 image can never be resolved, so it is replaced, not dropped. The ids are listed in `BROKEN` in `scripts/select_taskset.py`, each with its reason. The draw above is made first, unchanged, so no other task moves. Each drawn task in `BROKEN` is then replaced, in its pilot slot if it had one, by the first candidate that is in the same stratum, not yet drawn, not broken and not from `psf/requests` (its tests reach the live network), in an order fixed by `random.Random("17:replace:<broken id>")`. A candidate that fails its own check (gold must pass, baseline must fail) is added to `BROKEN` and the next one is taken. The manifest keeps a record of every broken task (`broken = "reason"`, and `replaced_by` for the one that took its place). It is not part of the set: `full_size` and `pilot_size` count working tasks, iteration skips it, and building a plan with it (named or from a plan file) raises an error. `steproute tasks check` still accepts its id, so the failure can be reproduced.
+**Broken tasks (issue 58).** A task whose gold patch fails on its arm64 image can never be resolved, so it is replaced, not dropped. The ids are listed in `BROKEN` in `scripts/select_taskset.py`, each with its reason. The draw above is made first, unchanged, so no other task moves. Each drawn task in `BROKEN` is then replaced, in its pilot slot if it had one, by the first candidate that is in the same stratum, not yet drawn, not broken and not from `psf/requests` (its tests reach the live network), in an order fixed by `random.Random("17:replace:<broken id>")`. A candidate that fails its own check (gold must pass, baseline must fail) is added to `BROKEN` and the next one is taken. Replacements are stable (issue 64): every decided and checked pair is recorded in `REPLACEMENTS` in the script and used as it is, so adding a broken id never moves a recorded replacement or a pilot task; only a broken id with no recorded pair is drawn, from a pool that excludes every drawn task, every recorded replacement and every broken id. Regenerating with only the five first pairs reproduced the manifest byte for byte. The manifest keeps a record of every broken task (`broken = "reason"`, and `replaced_by` for the one that took its place). It is not part of the set: `full_size` and `pilot_size` count working tasks, iteration skips it, and building a plan with it (named or from a plan file) raises an error. `steproute tasks check` still accepts its id, so the failure can be reproduced.
 
-Five tasks are replaced (section 8.3): `psf__requests-1766`, `-1921`, `-2317`, `-2931` and `-5414` by `sympy__sympy-16450`, `django__django-13401`, `django__django-16139`, `sympy__sympy-15875` and `sympy__sympy-23950`. The pilot's only change is `django__django-13401` for `psf__requests-1921` (hard).
+Five tasks are replaced (section 8.3): `psf__requests-1766`, `-1921`, `-2317`, `-2931` and `-5414` by `sympy__sympy-16450`, `django__django-13401`, `django__django-16139`, `sympy__sympy-15875` and `sympy__sympy-23950`. The pilot's only change is `django__django-13401` for `psf__requests-1921` (hard). Three more are replaced (section 8.4): `matplotlib__matplotlib-20826`, `matplotlib__matplotlib-20859` and `sphinx-doc__sphinx-10435` by `django__django-12273`, `sympy__sympy-15809` and `django__django-13568`. The pilot did not change.
 
 Docker Hub and GHCR image listings are not versioned. If an image disappears, the universe changes, and the script then reports a different selection.
 
@@ -464,11 +464,147 @@ Replacements are the first candidate in the seeded order (section 2, "Broken tas
 
 Money, or more time on the machine than issue 56 had:
 
-- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do (section 8.3 for the replacement of `psf__requests-1921`). Besides them, the other 6 `psf/requests` tasks were checked (5 of those 7 images are broken, including `-1921`), and the 4 replacements; the other 124 images of the full set were not pulled or validated. Validate each with `--patch gold` and `--patch baseline` before its first paid run.
+- **That the arm64 images grade like the x86_64 ones in general.** The pilot's 20 do (section 8.3 for the replacement of `psf__requests-1921`). Besides them, the other 6 `psf/requests` tasks were checked (5 of those 7 images are broken, including `-1921`), and the 4 replacements; the other 124 images were checked on 14 Nov 2026 (issue 64, section 8.4): 121 grade correctly, 3 fail their gold patch twice and are broken, now replaced (section 8.4).
 - **Disk for all 150 images.** Extrapolating the pilot: about 75 GB in Docker's store (0.75 GB per image after sharing), well within the VM's 900 GB. The pre-flight's free-disk line measures the host disk at the output directory, not the Docker VM's disk.
 - **Every per-run cost number for the 5.5 and 5.2 Claude models and the current DeepSeek models.** These are derived from older analogs and must be measured in the pilot.
 - **That prompt caching works end to end against the live Anthropic API** through the proxy (sensitivity 1 above). The proxy's breakpoints are tested against a mock only.
 - **Local throughput** of `gpt-oss:20b`, `qwen3-coder:30b` and `devstral:24b` in the agent loop: they passed the one-call tool test (issue 56; all four local models PASS) but ran no task.
+
+### 8.4 The other 124 images (issue 64, 14 Nov 2026)
+
+All 124 tasks that were not yet checked were pulled (78 official from Docker Hub with `docker pull`, 46 Epoch from GHCR with `scripts/fetch_ghcr_image.py`) and checked with `scripts/validate_images.py`: `steproute tasks check --patch gold` must end `passed` and `--patch baseline` must end `failed`. **121 of 124 grade correctly.** Three fail their gold patch and are broken (reasons below): `matplotlib__matplotlib-20826`, `matplotlib__matplotlib-20859`, `sphinx-doc__sphinx-10435`. A second gold run on 14 Nov 2026 failed the same way, so the three are really broken, not transient: `matplotlib__matplotlib-20826` (3 of 673 PASS_TO_PASS tests fail: `test_imshow_clip[png]`, `test_imshow_clip[pdf]`, `test_contour_colorbar[png]`, with pandas "Multi-dimensional indexing (e.g. `obj[:, None]`) is no longer supported"), `matplotlib__matplotlib-20859` (1 of 88 PASS_TO_PASS tests fails: `test_legend.py::test_warn_big_data_best_loc`, "DID NOT WARN") and `sphinx-doc__sphinx-10435` (the FAIL_TO_PASS test `tests/test_build_latex.py::test_latex_code_role` fails on its LaTeX output assertion). They are replaced by the first candidates of the seeded order (section 2), in the same stratum, none from `psf/requests`: `matplotlib__matplotlib-20826` (hard) by `django__django-12273`, `matplotlib__matplotlib-20859` (easy) by `sympy__sympy-15809`, `sphinx-doc__sphinx-10435` (hard) by `django__django-13568`. Each replacement passed gold and failed baseline at the first try (last rows of the table). Nothing else in the manifest moved and the pilot is the same 20 tasks. Together with the 26 checked before, all 150 working tasks of the manifest are verified (the three broken ones are replaced). The driver's wall time was about 2 h of checks. Docker's image store afterwards: 201 images, 101.8 GB (`docker system df`, including images from before this work).
+
+The raw results are in `docs/taskset-checks.jsonl` (one line per task, with image, source, statuses, seconds). Regenerate this table from it.
+
+| Task | Image source | Gold | Baseline | s (gold / baseline) | Note |
+|---|---|---|---|---|---|
+| `astropy__astropy-12907` | official | passed | failed | 154 / 105 | |
+| `astropy__astropy-13033` | Epoch | passed | failed | 101 / 105 | |
+| `astropy__astropy-13453` | Epoch | passed | failed | 154 / 131 | |
+| `astropy__astropy-13579` | official | passed | failed | 130 / 132 | |
+| `astropy__astropy-14182` | Epoch | passed | failed | 119 / 103 | |
+| `astropy__astropy-14365` | Epoch | passed | failed | 48 / 42 | |
+| `astropy__astropy-14369` | official | passed | failed | 44 / 54 | |
+| `astropy__astropy-14539` | Epoch | passed | failed | 52 / 48 | |
+| `astropy__astropy-14995` | official | passed | failed | 51 / 47 | |
+| `astropy__astropy-8707` | Epoch | passed | failed | 26 / 26 | |
+| `astropy__astropy-8872` | Epoch | passed | failed | 26 / 27 | |
+| `django__django-10973` | official | passed | failed | 23 / 23 | |
+| `django__django-11087` | official | passed | failed | 23 / 22 | |
+| `django__django-11095` | Epoch | passed | failed | 23 / 22 | |
+| `django__django-11239` | official | passed | failed | 21 / 22 | |
+| `django__django-11299` | Epoch | passed | failed | 23 / 22 | |
+| `django__django-11333` | official | passed | failed | 22 / 22 | |
+| `django__django-11790` | official | passed | failed | 22 / 22 | |
+| `django__django-11848` | official | passed | failed | 22 / 22 | |
+| `django__django-11964` | official | passed | failed | 25 / 24 | |
+| `django__django-12039` | official | passed | failed | 22 / 23 | |
+| `django__django-12262` | official | passed | failed | 23 / 23 | |
+| `django__django-12276` | official | passed | failed | 23 / 24 | |
+| `django__django-12308` | official | passed | failed | 22 / 22 | |
+| `django__django-12325` | official | passed | failed | 22 / 23 | |
+| `django__django-12406` | official | passed | failed | 22 / 23 | |
+| `django__django-12663` | official | passed | failed | 24 / 23 | |
+| `django__django-13033` | Epoch | passed | failed | 22 / 21 | |
+| `django__django-13297` | Epoch | passed | failed | 24 / 26 | |
+| `django__django-13363` | Epoch | passed | failed | 22 / 22 | |
+| `django__django-13410` | official | passed | failed | 21 / 23 | |
+| `django__django-13512` | Epoch | passed | failed | 23 / 21 | |
+| `django__django-13516` | Epoch | passed | failed | 22 / 22 | |
+| `django__django-13658` | Epoch | passed | failed | 39 / 44 | |
+| `django__django-13786` | official | passed | failed | 22 / 22 | |
+| `django__django-13821` | official | passed | failed | 22 / 22 | |
+| `django__django-14155` | Epoch | passed | failed | 22 / 29 | |
+| `django__django-14170` | official | passed | failed | 22 / 27 | |
+| `django__django-14238` | Epoch | passed | failed | 24 / 27 | |
+| `django__django-14500` | Epoch | passed | failed | 22 / 29 | |
+| `django__django-14559` | Epoch | passed | failed | 22 / 23 | |
+| `django__django-14608` | Epoch | passed | failed | 37 / 37 | |
+| `django__django-14792` | Epoch | passed | failed | 22 / 27 | |
+| `django__django-14855` | official | passed | failed | 36 / 36 | |
+| `django__django-15525` | Epoch | passed | failed | 22 / 22 | |
+| `django__django-15554` | Epoch | passed | failed | 22 / 30 | |
+| `django__django-15572` | official | passed | failed | 23 / 22 | |
+| `django__django-15695` | official | passed | failed | 22 / 22 | |
+| `django__django-15863` | Epoch | passed | failed | 22 / 22 | |
+| `django__django-15916` | official | passed | failed | 22 / 23 | |
+| `django__django-16032` | official | passed | failed | 22 / 22 | |
+| `django__django-16100` | official | passed | failed | 22 / 22 | |
+| `django__django-16256` | Epoch | passed | failed | 21 / 24 | |
+| `django__django-16662` | official | passed | failed | 23 / 25 | |
+| `django__django-16938` | official | passed | failed | 25 / 28 | |
+| `django__django-17087` | Epoch | passed | failed | 23 / 22 | |
+| `matplotlib__matplotlib-14623` | Epoch | passed | failed | 54 / 53 | |
+| `matplotlib__matplotlib-20488` | Epoch | passed | failed | 30 / 29 | |
+| `matplotlib__matplotlib-20676` | official | passed | failed | 26 / 26 | |
+| `matplotlib__matplotlib-20826` | Epoch | failed **BROKEN, replaced** | failed | 57 / 56 | |
+| `matplotlib__matplotlib-20859` | official | failed **BROKEN, replaced** | failed | 30 / 30 | |
+| `matplotlib__matplotlib-21568` | Epoch | passed | failed | 25 / 25 | |
+| `mwaskom__seaborn-3069` | official | passed | failed | 30 / 29 | |
+| `mwaskom__seaborn-3187` | Epoch | passed | failed | 40 / 39 | |
+| `pytest-dev__pytest-10081` | official | passed | failed | 24 / 22 | |
+| `pytest-dev__pytest-10356` | official | passed | failed | 23 / 22 | |
+| `pytest-dev__pytest-5809` | Epoch | passed | failed | 22 / 22 | |
+| `pytest-dev__pytest-5840` | official | passed | failed | 23 / 22 | |
+| `pytest-dev__pytest-6197` | official | passed | failed | 24 / 33 | |
+| `pytest-dev__pytest-6202` | official | passed | failed | 23 / 33 | |
+| `pytest-dev__pytest-7205` | official | passed | failed | 22 / 30 | |
+| `pytest-dev__pytest-7236` | Epoch | passed | failed | 22 / 38 | |
+| `pytest-dev__pytest-7432` | Epoch | passed | failed | 23 / 22 | |
+| `pytest-dev__pytest-7490` | Epoch | passed | failed | 22 / 39 | |
+| `pytest-dev__pytest-8399` | Epoch | passed | failed | 32 / 32 | |
+| `scikit-learn__scikit-learn-25102` | official | passed | failed | 24 / 22 | |
+| `scikit-learn__scikit-learn-25232` | Epoch | passed | failed | 27 / 28 | |
+| `scikit-learn__scikit-learn-25931` | Epoch | passed | failed | 25 / 24 | |
+| `scikit-learn__scikit-learn-25973` | official | passed | failed | 24 / 24 | |
+| `scikit-learn__scikit-learn-26194` | Epoch | passed | failed | 23 / 23 | |
+| `sphinx-doc__sphinx-10435` | official | failed **BROKEN, replaced** | failed | 27 / 25 | |
+| `sphinx-doc__sphinx-10466` | official | passed | failed | 22 / 23 | |
+| `sphinx-doc__sphinx-10673` | Epoch | passed | failed | 21 / 22 | |
+| `sphinx-doc__sphinx-11445` | official | passed | failed | 23 / 24 | |
+| `sphinx-doc__sphinx-7748` | Epoch | passed | failed | 21 / 22 | |
+| `sphinx-doc__sphinx-7757` | Epoch | passed | failed | 21 / 21 | |
+| `sphinx-doc__sphinx-7985` | Epoch | passed | failed | 23 / 23 | |
+| `sphinx-doc__sphinx-8265` | official | passed | failed | 21 / 21 | |
+| `sphinx-doc__sphinx-8548` | official | passed | failed | 21 / 22 | |
+| `sphinx-doc__sphinx-8551` | official | passed | failed | 22 / 22 | |
+| `sphinx-doc__sphinx-8621` | official | passed | failed | 22 / 22 | |
+| `sphinx-doc__sphinx-9229` | Epoch | passed | failed | 22 / 21 | |
+| `sphinx-doc__sphinx-9230` | official | passed | failed | 22 / 23 | |
+| `sphinx-doc__sphinx-9258` | official | passed | failed | 22 / 23 | |
+| `sphinx-doc__sphinx-9320` | official | passed | failed | 22 / 22 | |
+| `sphinx-doc__sphinx-9367` | official | passed | failed | 21 / 21 | |
+| `sphinx-doc__sphinx-9591` | official | passed | failed | 22 / 23 | |
+| `sphinx-doc__sphinx-9658` | official | passed | failed | 21 / 21 | |
+| `sphinx-doc__sphinx-9711` | official | passed | failed | 22 / 21 | |
+| `sympy__sympy-12481` | official | passed | failed | 21 / 21 | |
+| `sympy__sympy-12489` | official | passed | failed | 21 / 21 | |
+| `sympy__sympy-13031` | official | passed | failed | 21 / 23 | |
+| `sympy__sympy-13091` | official | passed | failed | 22 / 21 | |
+| `sympy__sympy-13798` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-13852` | Epoch | passed | failed | 21 / 21 | |
+| `sympy__sympy-13878` | official | passed | failed | 28 / 28 | |
+| `sympy__sympy-13974` | official | passed | failed | 21 / 22 | |
+| `sympy__sympy-14976` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-15017` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-15345` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-16792` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-17318` | official | passed | failed | 27 / 26 | |
+| `sympy__sympy-18211` | official | passed | failed | 24 / 27 | |
+| `sympy__sympy-18698` | official | passed | failed | 27 / 26 | |
+| `sympy__sympy-19637` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-20154` | Epoch | passed | failed | 21 / 22 | |
+| `sympy__sympy-20916` | official | passed | failed | 23 / 22 | |
+| `sympy__sympy-21379` | official | passed | failed | 31 / 31 | |
+| `sympy__sympy-21612` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-22080` | official | passed | failed | 25 / 24 | |
+| `sympy__sympy-22714` | official | passed | failed | 24 / 24 | |
+| `sympy__sympy-22914` | official | passed | failed | 22 / 22 | |
+| `sympy__sympy-23534` | official | passed | failed | 21 / 77 | |
+| `sympy__sympy-24562` | official | passed | failed | 33 / 49 | |
+| `django__django-12273` | official | passed | failed | 25 / 23 | replaces `matplotlib__matplotlib-20826` |
+| `django__django-13568` | official | passed | failed | 23 / 23 | replaces `sphinx-doc__sphinx-10435` |
+| `sympy__sympy-15809` | Epoch | passed | failed | 25 / 24 | replaces `matplotlib__matplotlib-20859` |
 
 ## 9. Open questions for the maintainer
 
