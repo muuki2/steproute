@@ -41,7 +41,7 @@ from steproute.core.privacy import PrivacyConfig
 from steproute.core.schema import Action, ModelProfile, Outcome
 from steproute.core.service import Service
 from steproute.core.store import TraceStore
-from steproute.replay.agent import ChatReply, RunStopped
+from steproute.replay.agent import ChatReply, RejectedCall, RunStopped
 from steproute.replay.config import Limits, ProviderConfig
 from steproute.replay.ledger import Ledger
 from steproute.replay.plan import RunSpec
@@ -249,6 +249,18 @@ class CallRecord:
 _TRANSIENT = {408, 409, 429, 500, 502, 503, 504, 520, 529}
 #: Seconds per sleep while a run waits for off-peak hours, so a stop is noticed.
 PAUSE_CHUNK_S = 60.0
+
+
+def _rejected(value: Any) -> RejectedCall | None:
+    """The ``rejected_tool_call`` field of the proxy's ``tool_call_parse`` answer."""
+    if not isinstance(value, Mapping) or not isinstance(value.get("arguments"), str):
+        return None
+    length = value.get("length")
+    return RejectedCall(
+        value["arguments"],
+        str(value.get("parser_error") or ""),
+        length if isinstance(length, int) and not isinstance(length, bool) else None,
+    )
 
 
 def is_balance_error(status: int, message: str) -> bool:
@@ -500,7 +512,8 @@ class ProxyChatClient:
             err = obj.get("error") if isinstance(obj.get("error"), Mapping) else {}
             kind = str((err or {}).get("type", ""))
             if status == 500 and (err or {}).get("upstream_kind") == TOOL_CALL_PARSE:
-                return self._unreadable(headers, intent, period, latency)
+                rejected = _rejected((err or {}).get("rejected_tool_call"))
+                return self._unreadable(headers, intent, period, latency, rejected)
             # An error answer: the provider either refused before doing work (not billed) or
             # timed out (possibly billed): a timeout is charged at the worst case.
             if headers.get("x-steproute-decision-id"):
@@ -541,14 +554,20 @@ class ProxyChatClient:
             )
 
     def _unreadable(
-        self, headers: Mapping[str, str], intent: Any, period: str, latency: float
+        self,
+        headers: Mapping[str, str],
+        intent: Any,
+        period: str,
+        latency: float,
+        rejected: RejectedCall | None = None,
     ) -> ChatReply:
         """The model wrote a tool call the provider could not parse, and the provider failed
         the request instead of returning the reply (Ollama: HTTP 500 "error parsing tool
         call"). That is the model's step, not a provider failure: the call is recorded, with
         its usage unknown (charged the worst case, which is zero for a local model), and the
-        scaffold gets an unreadable reply. Not retried: a retry would hide the model's mistake.
-        The step's decision is labelled with the run's result like any other step."""
+        scaffold gets an unreadable reply, with the rejected arguments and the parser's error
+        when the proxy's answer carried them. Not retried: a retry would hide the model's
+        mistake. The step's decision is labelled with the run's result like any other step."""
         did = headers.get("x-steproute-decision-id")
         flags = ["missing_usage", TOOL_CALL_PARSE]
         usd = self.worst_call
@@ -558,7 +577,7 @@ class ProxyChatClient:
         rec = CallRecord(did, usd, flags, period=period, list_usd=usd, latency_ms=latency)
         self.calls.append(rec)
         self._verify(headers, None, answered=False)
-        return ChatReply({}, None, unreadable=True)
+        return ChatReply({}, None, unreadable=True, rejected=rejected)
 
     def _charged(self, usd: float, list_usd: float) -> None:
         self.spent += usd

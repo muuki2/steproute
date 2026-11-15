@@ -184,7 +184,10 @@ def render_datasheet(inp: DatasheetInput) -> str:
         "- **Strata are estimates.** Difficulty strata come from other models' public results, "
         "not from this data.",
         "- **One scaffold.** All runs use the same minimal bash agent. A model's success here "
-        "depends on that scaffold and prompt.",
+        "depends on that scaffold and prompt. It has two versions: `steproute-bash-2` (issue "
+        "75) quotes tool-call arguments that are not valid JSON back to the model and offers an "
+        "`apply_patch` command in the task container; `steproute-bash-1` did neither. The "
+        "replay journal and grid record which version each run used.",
         "- **The label is per task.** Every step carries the task's result, so a step is "
         "labelled success even if it was a wasted step. Step-level credit is not measured.",
         "- **Small and uneven.** The number of runs per cell is small, usually one repeat, so "

@@ -53,14 +53,29 @@ def default_effort(profile: ModelProfile) -> str:
 
 
 def _error_body(
-    status: int, kind: str, message: str, upstream_kind: str | None = None
+    status: int,
+    kind: str,
+    message: str,
+    upstream_kind: str | None = None,
+    rejected: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     err: dict[str, Any] = {"message": message, "type": kind, "code": status}
     if upstream_kind is not None:
         # Which upstream failure it was (an exception class name, or ``tool_call_parse``), so
         # a client can tell them apart without reading the message.
         err["upstream_kind"] = upstream_kind
+    if rejected is not None:
+        # ``tool_call_parse`` only: the arguments the upstream rejected and its parser's error,
+        # so the client can show the model what it sent. This answer is the only place the
+        # proxy puts them (``docs/PROXY.md``).
+        err["rejected_tool_call"] = dict(rejected)
     return {"error": err}
+
+
+def _upstream_error_body(status: int, message: str, err: UpstreamError | None) -> dict[str, Any]:
+    if err is None:
+        return _error_body(status, "upstream_error", message)
+    return _error_body(status, "upstream_error", message, err.kind, err.rejected)
 
 
 def _sse(obj: Mapping[str, Any] | str) -> bytes:
@@ -515,11 +530,7 @@ class Proxy:
                 if err
                 else "no upstream could serve this request (see the proxy log)"
             )
-            resp_err = Response(
-                status,
-                headers,
-                _error_body(status, "upstream_error", message, err.kind if err else None),
-            )
+            resp_err = Response(status, headers, _upstream_error_body(status, message, err))
             resp_err._finish = lambda: self._finish(step, None)
             return resp_err
         final["model"] = step.client_model
@@ -599,11 +610,7 @@ class Proxy:
                 if err
                 else "no upstream could serve this request"
             )
-            r = Response(
-                status,
-                headers,
-                _error_body(status, "upstream_error", message, err.kind if err else None),
-            )
+            r = Response(status, headers, _upstream_error_body(status, message, err))
             r._finish = lambda: self._finish(step, None)
             return r
         options = step.params.get("stream_options")
@@ -633,11 +640,8 @@ class Proxy:
                 step.signals["stream_error"] = True
                 self._count("upstream_errors")
                 yield _sse(
-                    _error_body(
-                        exc.status,
-                        "upstream_error",
-                        f"upstream failed mid-stream ({exc.kind})",
-                        exc.kind,
+                    _upstream_error_body(
+                        exc.status, f"upstream failed mid-stream ({exc.kind})", exc
                     )
                 )
             except GeneratorExit:

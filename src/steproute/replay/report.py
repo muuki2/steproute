@@ -50,6 +50,16 @@ class ConfigStats:
     statuses: dict[str, int] = field(default_factory=dict)
     est_central: float = 0.0
     by_stratum: dict[str, list[int]] = field(default_factory=dict)  # stratum -> [passed, labelled]
+    #: Runs per scaffold identifier (``steproute-bash-1``, ``-2``; ``?`` when not recorded).
+    scaffolds: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def scaffold_text(self) -> str:
+        """The scaffold of the runs; a configuration with runs on more than one is flagged."""
+        if len(self.scaffolds) == 1:
+            return next(iter(self.scaffolds))
+        parts = ", ".join(f"{k} ({v})" for k, v in sorted(self.scaffolds.items()))
+        return f"MIXED: {parts}"
 
     @property
     def success_rate(self) -> float | None:
@@ -91,6 +101,8 @@ def measure(
         )
         status = str(end.get("status"))
         st.statuses[status] = st.statuses.get(status, 0) + 1
+        scaffold = str(end.get("scaffold") or "?")
+        st.scaffolds[scaffold] = st.scaffolds.get(scaffold, 0) + 1
         st.runs += 1
         st.cost += float(end.get("cost_usd") or 0.0)
         st.list_cost += float(end.get("list_cost_usd", end.get("cost_usd")) or 0.0)
@@ -157,8 +169,8 @@ def pilot_report(
         "",
         "| Model | Effort | Runs | Success (labelled) | Unlabelled | $/run billed | $ total billed "
         "| $ total at list price | Est. $/run (list) | Realised / est. (list) | Steps/run "
-        "| Cache-read share | Missing usage |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Cache-read share | Missing usage | Scaffold |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for (model, effort), st in sorted(
         stats.items(), key=lambda kv: (kv[1].provider != "ollama", kv[1].provider, kv[0])
@@ -171,8 +183,15 @@ def pilot_report(
             f"| {_usd(st.est_central, 4)} "
             f"| {'n/a' if st.ratio is None else f'{st.ratio:.2f}'} "
             f"| {st.steps / st.runs if st.runs else 0:.1f} | {_pct(st.cache_share)} "
-            f"| {st.missing_usage} |"
+            f"| {st.missing_usage} | {st.scaffold_text} |"
         )
+    mixed = sorted(f"{m} ({e})" for (m, e), st in stats.items() if len(st.scaffolds) > 1)
+    if mixed:
+        lines += [
+            "",
+            "Configurations with runs on more than one scaffold (their rows mix both; compare "
+            "with care): " + ", ".join(mixed) + ".",
+        ]
     lines += [
         "",
         "## Spend by provider and month (ledger)",
