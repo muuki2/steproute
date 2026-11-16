@@ -252,7 +252,7 @@ Each run starts its own in-process proxy on a fresh loopback port (`proxyrun.Run
 | `plan.json`, `gate.json` | The plan's identity and inputs; the stage-gate decision | yes |
 | `runs/<run_id>/result.json` | Status, reason, steps, usage, cost of one attempt | yes |
 | `runs/<run_id>/patch.diff`, `check.json` | The submitted patch and the check result | yes (patches are model output on permissive repositories) |
-| `runs/<run_id>/trajectory.json`, `workspace.diff` | The full conversation and the raw workspace diff | **scratch**: they contain repository code and model text; issue 19 decides, under D5, whether trajectories are published |
+| `runs/<run_id>/trajectory.json`, `workspace.diff` | The full conversation and the raw workspace diff. A run that ends early (the client stops it at a limit, on a provider or infrastructure error or on an interrupt, or an error is raised under the scaffold) has them too since issue 80: the conversation as its last model call carried it, and the workspace at the stop. A run that never reached the scaffold (its workspace or its proxy could not be set up) or whose process was killed has neither, and a failure to write them never changes how such a run is recorded | **scratch**: they contain repository code and model text; issue 19 decides, under D5, whether trajectories are published |
 | `.lock` | The runner's lock | scratch |
 
 No file contains a key: every text the runner writes passes through the redactor, and the test `test_keys_never_reach_any_output` scans every file of a run whose model tried to read the environment.

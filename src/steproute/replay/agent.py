@@ -216,6 +216,11 @@ class AgentResult:
 
 
 class Scaffold(Protocol):
+    """One agent loop. ``run`` returns the result of a run that came to its own end. It lets
+    the client's ``RunStopped``, and any error, pass through unchanged: the runner then stores
+    the conversation of the client's latest call (issue 80), so a scaffold has nothing to do
+    for a run that is stopped."""
+
     name: str
 
     def run(
