@@ -8,7 +8,7 @@ Decided by the maintainer on 13 Nov 2026:
 
 - **Task set approved:** the 150 SWE-bench Verified tasks in the manifest, with the 20-task pilot drawn from them.
 - **Grid: option B, the sparse grid.** Every local configuration and each paid model at its default effort on all 150 tasks, plus the other paid efforts on 30 tasks.
-- **No run is approved yet.** The pilot and every later batch need a separate go-ahead, and the option B estimate is to be redone from the pilot's measured costs before month 2.
+- **No run is approved yet.** The pilot and every later batch need a separate go-ahead, and the option B estimate is to be redone from the pilot's measured costs before month 2. *Since then: the pilot was approved on 14 Nov 2026 and ran on 14 to 16 Nov. `docs/results/pilot.md` has its results and the redone option B estimate (about $70 for Anthropic; about $101 at list price for DeepSeek). No later batch is approved.*
 
 Decided by the maintainer on 13 Nov 2026, after Gate A (issue 57):
 

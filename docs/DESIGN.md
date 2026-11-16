@@ -9,7 +9,7 @@ This is the design overview: what was decided and why. The detail lives in the p
 Three labels are used in this document.
 
 - **Built and tested.** The code exists and its tests pass. The tests use mocks, loopback servers and synthetic data. No test calls a paid provider.
-- **Built, not verified on real paid runs.** The code exists, but the behaviour that matters (real prices, real cache behaviour, real step counts) has not been seen from a provider. The pilot replay is what verifies it. It has not run (14 Nov 2026).
+- **Built and run in the pilot.** The code exists and ran against the paid providers in the pilot replay of 14 to 16 Nov 2026 (`docs/results/pilot.md`), so real prices, real cache behaviour and real step counts have been seen. The row says what the pilot did not show.
 - **Planned.** No code, or only a stub.
 
 | Part | Status | Detail |
@@ -23,8 +23,9 @@ Three labels are used in this document.
 | Offline evaluator (frontier verdict, off-policy estimators) | Built and tested on synthetic data | `docs/EVALUATION.md` |
 | Tabular predictor (LightGBM) | Built and tested on synthetic data only. No real result | `docs/MODEL-CARD-TABULAR.md` |
 | Replay runner: free half (Docker, harness, proxy, Ollama) | Built and run on real infrastructure with local models | `docs/REPLAY.md` |
-| Replay runner: paid path, spend caps, ledger, cache canary | Built, not verified on real paid runs | `docs/REPLAY.md` |
-| Pilot replay, dataset release, baseline report (Gate B) | Planned | `docs/ISSUES.md` issues 18, 19, 23 |
+| Replay runner: paid path, spend caps, ledger, cache canary | Built and run in the pilot. 280 paid runs, $12.85, prompt caching seen at both providers. No cap was reached, so a real cap stop has not been seen, and the ledger was not compared with the providers' billing pages | `docs/REPLAY.md`, `docs/results/pilot.md` |
+| Pilot replay | Run on 14 to 16 Nov 2026: 20 tasks, 21 configurations, 420 runs. Five of the 21 results are dominated by a limit of the test setup | `docs/results/pilot.md` |
+| Dataset release, baseline report (Gate B) | Planned. The release tool is built; nothing is released | `docs/ISSUES.md` issues 19, 23 |
 | External baselines (LLMRouter graphrouter, ParetoBandit, OpenSquilla, RouteLLM) | Planned. No code | `docs/INTEGRATION-NOTES.md` sections 5 and 6 (reading notes only) |
 | Graph predictor and experiment 1 (M4) | Planned. `steproute.graph` holds only a docstring | issues 24 to 27 |
 | Online updates, drift handling, experiments 2 to 4 (M5) | Planned | issues 28, 29 |
@@ -110,7 +111,7 @@ For a single attempt:
 - **Cold step (the switch tax):** the whole prompt is billed at `price_in * cache_write_mult`. The multipliers come from the profile: Anthropic writes at 1.25 times the input price and reads at 0.025 to 0.1 times (per model); DeepSeek has no write premium (1.0) and reads at 0.02 or 0.033 times; Ollama prices at 0, so its switch cost is latency (model reload plus prefill), which is an optional profile term that is unset in the default catalog.
 - **Cache minimum:** below `cache_min_tokens` (512 on Anthropic) nothing is cached, so no premium is charged.
 - **Price tiers:** the full prompt, cache reads and writes included, selects the tier, and the tier applies to the whole request, output included. Haiku 5.5 above 100,000 tokens pays the higher rates.
-- **Output tokens** are the caller's estimate, scaled by an effort multiplier. **The multiplier is 1.0 for every effort in the default catalog. That is a placeholder, not a measurement**, so higher effort costs no more output than lower effort until the pilot measures it.
+- **Output tokens** are the caller's estimate, scaled by an effort multiplier. **The multiplier is 1.0 for every effort in the default catalog. That is a placeholder, not a measurement**, so higher effort costs no more output than lower effort. The pilot measured output by effort (`docs/results/pilot.md`); the catalog has not been updated from it.
 - **Time of day:** DeepSeek charges half outside its peak windows. The windows are catalog data (`meta.peak_hours`: 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday). The replay runner prices each DeepSeek call by when it ran and records the billed cost and the list cost. The router's `expected_cost` does not use time of day and prices at the catalog (peak) price. Chinese public holidays are treated as ordinary weekdays, because we cannot verify that calendar here.
 
 For a cascade: `cost = c1 + (1 - p1) * (c2 + ...)`, where each `c_i` is evaluated in the state the failed attempts before it leave behind (the cache now belongs to the previous step). A cascade that changes model pays the switch tax only in the failure branch. The same fold gives `max_usd`, the cost if every step runs, which spend caps use.
@@ -158,15 +159,15 @@ If the GNN does not beat LightGBM with the same profile features in experiment 1
 
 ## 8. Milestones
 
-Status as of 14 Nov 2026.
+Status as of 16 Nov 2026.
 
 - **M0 Foundation:** schema, JSONL store, action enumeration, cache-aware cost model, policy interface, rule baseline, tests. Built and tested.
-- **M1 Collectors:** proxy, Claude Code (plugin and MCP server), dsh. Built and tested against mocks and in real Claude Code and dsh sessions. No paid provider has been called.
-- **M2 Data:** replay agent tasks across models and efforts to get an outcome matrix, and publish it. The runner, the task set and the spend ledger are built. The data does not exist.
+- **M1 Collectors:** proxy, Claude Code (plugin and MCP server), dsh. Built and tested against mocks and in real Claude Code and dsh sessions. The proxy carried every model call of the pilot replay; outside replays no paid provider has been called.
+- **M2 Data:** replay agent tasks across models and efforts to get an outcome matrix, and publish it. The runner, the task set and the spend ledger are built. The 20-task pilot has run; the grid has not, and nothing is published.
   - Task set: 150 SWE-bench Verified tasks with native arm64 evaluation images, and a 20-task pilot. A task whose gold patch fails on its image can never be solved, so it is replaced. Five `psf/requests` tasks were replaced on 14 Nov 2026, one of them in the pilot (`docs/TASKSET.md` section 8.3).
-  - Grid: option B, the sparse grid. Every local configuration and each paid model at its default effort on all 150 tasks, plus the other paid efforts on 30 tasks. The cost estimate is to be redone from the pilot's measured costs before month 2.
-  - Pilot: 20 tasks over the pilot configurations. Estimated at $41 of Anthropic spend (range $23 to $179) and $8.79 of DeepSeek spend at off-peak prices (range $4.70 to $44.43) against the $10 total. These are estimates from assumed step counts and prices, not measurements.
-  - Spend control: a runner that cannot pass the caps. Every paid call writes its worst case to an append-only ledger before the call and the realised cost after it. A crash over-counts and never under-counts. DeepSeek calls wait for off-peak hours. A per-run cap ends a run as a labelled failure. This is tested against mocks only; whether the pilot finishes under the caps is untested.
+  - Grid: option B, the sparse grid. Every local configuration and each paid model at its default effort on all 150 tasks, plus the other paid efforts on 30 tasks. Redone from the pilot's measured costs, its estimate is about $70 for Anthropic and about $101 at list price for DeepSeek, which is about $50 off-peak (`docs/results/pilot.md`). No run beyond the pilot is approved.
+  - Pilot: 20 tasks over the pilot configurations, run on 14 to 16 Nov 2026. It cost $7.58 of Anthropic spend (estimated at $41, range $23 to $179) and $5.26 of DeepSeek spend at off-peak prices (estimated at $8.79, range $4.70 to $44.43) against the $10 total. 221 of the 420 runs passed. Results and caveats: `docs/results/pilot.md`.
+  - Spend control: a runner that cannot pass the caps. Every paid call writes its worst case to an append-only ledger before the call and the realised cost after it. A crash over-counts and never under-counts. DeepSeek calls wait for off-peak hours. A per-run cap ends a run as a labelled failure. The pilot finished under both limits without reaching any cap, so a cap stop is still tested against mocks only.
 - **M3 Baselines:** the evaluator and the LightGBM predictor are built; the report on real data (issue 23, then Gate B) is not. ParetoBandit, LLMRouter's `graphrouter`, OpenSquilla and RouteLLM baselines are planned.
 - **M4 Graph:** planned. Graph construction, GNN edge predictor, cold-start experiment, distillation. Starts only after Gate B.
 - **M5 Online:** planned. Online updates, drift handling, ablations, experiments 2 to 4.
@@ -174,7 +175,7 @@ Status as of 14 Nov 2026.
 ## 9. Risks
 
 - **Scope.** Five gaps is a lot. The order above means stopping after any milestone still leaves something usable.
-- **Cold-start data cost.** M2 needs real spend on replays. The sparse grid is estimated at about 6 months at the Anthropic cap (range 4 to 21) before the pilot replaces the assumptions (`docs/TASKSET.md`).
+- **Cold-start data cost.** M2 needs real spend on replays. The task-set estimate put the sparse grid at about 6 months at the Anthropic cap (range 4 to 21). Redone from the pilot it is about $70 for Anthropic, which is one month at the cap, but DeepSeek needs about $50 off-peak and has $4.74 left of its $10 (`docs/results/pilot.md`). Both figures come from 20 tasks.
 - **Model drift.** Model snapshots change during a multi-month grid, and a deprecation breaks the matrix.
 - **Outcome noise.** Implicit signals (retries, rejections) are weak labels; test-backed tasks anchor the dataset. Benchmark tasks can themselves be broken: 5 of the 7 `psf/requests` images in the 150-task draw failed with the gold patch (`docs/TASKSET.md` section 8.3), and a task nobody solves may be broken rather than hard.
 - **Grid is task-level.** The replay data cannot measure step-level routing, the switch tax or switching inside a task. Those need logged traces from real use.

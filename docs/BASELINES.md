@@ -185,7 +185,7 @@ It would then be a clearly labelled **zero-shot, pretrained-elsewhere** referenc
 - **Every number in `docs/synthetic/baselines/`.** The synthetic world has one informative task feature (a noisy difficulty hint) and six configurations, so these files test the plumbing and nothing else.
 - **Coverage.** The approved grid is sparse: each paid model at its default effort on all 150 tasks, and its other efforts on 30 tasks only (`docs/TASKSET.md`, option B). A baseline needs every arm on every task it trains on. On the real grid, run it on the dense part, with `--exclude-config` for each configuration that ran on the 30-task subset only. Alternatively, run it once on the 30 dense tasks, which is too few to train on.
 - **Training size.** About 55% of 150 tasks is roughly 80 training tasks. That is small for every one of these methods, and for ours. Expect wide intervals and `not_shown` verdicts.
-- **Which real task features exist.** `ContextEncoder` uses whatever numeric `features` the grid's task lines carry. Until the pilot's grid exists, it is not known how informative they are, or whether any of them leak the label. The tabular model card asks the same question (`docs/MODEL-CARD-TABULAR.md`).
+- **Which real task features exist.** `ContextEncoder` uses whatever numeric `features` the grid's task lines carry. The pilot's grid now exists (`docs/results/pilot.md`), but its task features have not been examined: it is not known how informative they are, or whether any of them leak the label. The tabular model card asks the same question (`docs/MODEL-CARD-TABULAR.md`).
 - **Whether RouteLLM's default pair is sensible.** On the real pool it will probably be a local model against a top Claude configuration.
 
 ## 8. Decisions for the maintainer

@@ -4,7 +4,7 @@
 
 Code: `src/steproute/replay/` (standard library only; a run that calls a model needs the `[proxy]` extra). Issue 18; the task set and the approved sparse grid (option B) are in `docs/TASKSET.md`; the grid format is `docs/EVALUATION.md` section 2.1.
 
-**Status (13 Nov 2026, issue 56): the free half has run on real infrastructure; no paid provider has ever been called.** Three local runs went end to end on this Mac (Docker task container, the proxy, Ollama's `/v1`, the official harness, the grid and traces), and the pilot's images were validated with the gold and baseline patches. The test suite still drives only the mock upstream on loopback. See "Tested on real infrastructure" and "What has never been tested".
+**Status (16 Nov 2026): the pilot has run on real providers.** 20 tasks under 21 configurations, 420 runs, $7.58 of Anthropic and $5.26 of DeepSeek spend; the results and their caveats are in `docs/results/pilot.md`. Before it, issue 56 ran the free half on real infrastructure (13 Nov 2026): three local runs went end to end on this Mac (Docker task container, the proxy, Ollama's `/v1`, the official harness, the grid and traces), and the pilot's images were validated with the gold and baseline patches. The test suite still drives only the mock upstream on loopback. See "Tested on real infrastructure", "What the pilot showed" and "What has never been tested".
 
 ## Commands
 
@@ -67,7 +67,7 @@ steproute replay run       --plan gpt-oss-rerun.toml --out runs/gpt-oss-rerun --
 steproute replay report    --out runs/gpt-oss-rerun --md runs/gpt-oss-rerun/report.md
 ```
 
-The dry run (`run` without `--execute`) was checked on 15 Nov 2026: 60 runs, all local, $0, in the order low, medium, high, and nothing written. `preflight` was not run then, because it asks the Ollama server, which a pilot run was using. The real run was not started. It needs Ollama, and the go-ahead. It writes nothing to `runs/pilot`. If a pilot run is still going, do not start this until the pilot's local lane is done: both would use the one Ollama server, and the runner keeps one model loaded only within one process.
+The dry run (`run` without `--execute`) was checked on 15 Nov 2026: 60 runs, all local, $0, in the order low, medium, high, and nothing written. `preflight` was not run then, because it asks the Ollama server, which a pilot run was using. The rerun was then made on 15 and 16 Nov 2026 into `runs/pilot-local-2`, from three plan files of this form that also held `qwen3-coder:30b` and `devstral:24b`: 100 runs on `steproute-bash-2`, with their results in `docs/results/pilot.md`. Such a run writes nothing to `runs/pilot`. If a pilot run is still going, do not start this until the pilot's local lane is done: both would use the one Ollama server, and the runner keeps one model loaded only within one process.
 
 ### The configuration file
 
@@ -281,7 +281,7 @@ Only the first two rows are model outcomes. The last two leave the cell pending.
 
 ### 7. The pilot report
 
-`steproute replay report` (`report.py`) reads a finished pilot's directory and writes `docs/results/pilot.md`. It shows each configuration's cost billed and at list price, the scaffold its runs used (`MIXED` when they used more than one; decision 1), spend by time of day, and the cells left pending by `budget_stop` or `balance_stop`. Realised / estimated ratios and the re-estimate use list prices, because the estimates are at peak prices. The re-estimate of the sparse grid prices each sparse configuration at its measured $/run where the pilot ran it, otherwise the task-set estimate times the measured realised/estimated ratio of the same model, or of the same provider, or unchanged (the table counts which). A directory whose paid providers pointed at loopback is marked "MOCK DATA. NOT A PILOT." at the top. The test `test_pilot_report_on_mock_data_is_marked_mock` runs it on mock data; no results file is checked in.
+`steproute replay report` (`report.py`) reads a finished pilot's directory and writes `docs/results/pilot.md`. It shows each configuration's cost billed and at list price, the scaffold its runs used (`MIXED` when they used more than one; decision 1), spend by time of day, and the cells left pending by `budget_stop` or `balance_stop`. Realised / estimated ratios and the re-estimate use list prices, because the estimates are at peak prices. The re-estimate of the sparse grid prices each sparse configuration at its measured $/run where the pilot ran it, otherwise the task-set estimate times the measured realised/estimated ratio of the same model, or of the same provider, or unchanged (the table counts which). A directory whose paid providers pointed at loopback is marked "MOCK DATA. NOT A PILOT." at the top. The test `test_pilot_report_on_mock_data_is_marked_mock` runs it on mock data. The checked-in `docs/results/pilot.md` is not this command's raw output: the pilot's runs are in two directories and the command reads one, so that page was put together from the two outputs, with further counts from the journals (its last section says how).
 
 ## Tested on real infrastructure (13 Nov 2026, issue 56)
 
@@ -297,19 +297,28 @@ On the maintainer's M4 Pro: Docker Desktop 28.0.4 (arm64, a VM of 8 GB), Ollama 
 - **Measured speed** (`qwen3.5:9b`, effort `none`, M4 Pro): 2.8-3.9 s per step including the command, about 32-39 output tokens per second over call time, 2.3-3.9 minutes per 40-54-step run. The harness check: 18-85 s per task, median about 21 s (about 15 s of it is the harness stopping its container).
 - **Bugs found and fixed** (each with a regression test): a local-only run wrote no `ledger.jsonl`; an HTTP 500 from Ollama, retried by the runner, left that step labelled `success = false` through the proxy's `retried` signal; `--patch empty` could never show that an image's tests fail (the harness skips empty patches), so `--patch baseline` was added; the harness and rows were not found without a `[check]` section; one transient 502 from the datasets-server failed `tasks fetch`.
 
+## What the pilot showed (14 to 16 Nov 2026)
+
+The pilot settled much of what the list below used to hold. The numbers are in `docs/results/pilot.md`.
+
+- **Paid calls work, and the pilot finished under both limits.** 280 paid runs made 3,456 Anthropic and 5,438 DeepSeek calls through LiteLLM's real providers, for $7.58 of the $80 Anthropic cap and $5.26 of DeepSeek's $10. No paid attempt ended as a provider error; the launch log records no failed Anthropic call and one HTTP 500 from DeepSeek, retried inside its run. No cap was reached.
+- **Prompt caching reaches both providers.** The cache-read share of prompt tokens was 69% to 99% for the Claude configurations and 95% to 99% for DeepSeek.
+- **Real step counts and costs** of the Claude and DeepSeek models on this scaffold are measured, per configuration.
+- **All four local models ran tasks in the agent loop**, and the local lane switched models inside one plan (`qwen3.5:9b` then `gpt-oss:20b` in the pilot, `qwen3-coder:30b` then `devstral:24b` in the rerun). Their wall time is measured.
+- **The paid lane and the local lane ran together** from 14 Nov 18:35 to 15 Nov 01:18 CET. No attempt ended on an error from Docker or the harness; the only internal errors are the nine of issue 72.
+- **Unattended running.** The rerun of 100 local runs took 8.8 hours without attention. The longest attempt of any run took 49.7 minutes, so the 2-hour per-run timeout was never reached.
+- **Ollama's unparseable tool call against the real server** (issues 71 and 75). In the rerun Ollama rejected 431 `gpt-oss:20b` calls; each was counted as the model's step and quoted back, and where the transcript is stored the next reply was a valid call in 177 of 246 cases. `apply_patch` returned success in 42 of the model's 55 calls.
+- **A refused step does not end a run as this document describes** (issue 72). Nine attempts in the paid runs stopped mid-run because the fixed policy returned no decision; the issue attributes them to the privacy rule by elimination. Each ended as `infra_error` and was run again, not as `blocked_sensitive`.
+- **A limit that was not expected:** `claude-haiku-5-5` at `max` effort used the whole `max_output_tokens` (16,384) in 61 of its 333 replies, and 12 of its 20 runs ended on three such replies in a row.
+- **Three local limits.** `qwen3.5:9b` ended on the 32K context cap in 35 of 40 runs, `gpt-oss:20b` at `high` in 11 of 20, and `devstral:24b` writes its commands as fenced text instead of tool calls, so all 20 of its runs ended on the three-replies rule.
+
 ## What has never been tested
 
-Everything below needs a paid provider, or more time on the real machine than issue 56 had:
-
-- **Any paid call.** The Anthropic path runs through LiteLLM's real `anthropic` provider against the Anthropic-format mock, and DeepSeek through LiteLLM's `deepseek` provider against the OpenAI-format mock; the real APIs, their errors, rate limits and reported usage were never seen. **That the pilot finishes under the caps is untested**; what makes it true is the cap guard, the ledger and the cheapest-first order, all tested against the mock.
-- **That prompt caching reaches Anthropic** through the proxy and shows up as cache reads in the reported usage (the task-set document's precondition 1). The cache canary is the guard; the first paid Claude runs are the test.
-- **Local models other than `qwen3.5:9b` in the agent loop.** `gpt-oss:20b`, `qwen3-coder:30b` and `devstral:24b` passed the one-call tool smoke test (`steproute catalog check`, all four PASS) only; none of them ran a task, and their speed is not measured. Model switching in the local lane (one model unloaded before the next) never ran with two models in one plan.
-- **Parallel containers under load.** Two containers (one agent, one harness) ran side by side once without trouble in the 8 GB VM; the pilot's paid lane (two runs) plus the local lane and their checks (up to four containers) was not tried.
-- **DeepSeek's off-peak billing.** That DeepSeek bills a call at half price when it starts and ends off-peak, how it bills a call that crosses a boundary, and that its usage report matches our pricing: none of it has been seen on a real bill. The schedule and pricing are tested only with a fake clock against the mock. Compare the ledger's off-peak total with DeepSeek's console after the first day.
+- **A real cap stop.** No run reached the $3 per-run cap and neither provider reached its limit, so `run_cap`, `budget_stop` and `balance_stop` have still only been seen against the mock.
+- **Provider rate limits.** The pilot's log shows none.
+- **DeepSeek's off-peak billing against a real bill.** The ledger billed all 5,438 DeepSeek calls at the off-peak price. That DeepSeek charged the same, and how it bills a call that crosses a boundary, has not been checked against its console in `docs/results/pilot.md`.
 - **DeepSeek's real out-of-funds answer.** Tested with the mock's HTTP 402, passed through LiteLLM as status 402. The real body and LiteLLM's mapping of it were never seen; the text "insufficient balance" is also matched.
-- **Real step counts and costs** of the 5.5 and 5.2 Claude models and the current DeepSeek models on this scaffold, which the pilot exists to measure.
-- **Wall time**: hours of unattended running, and the 2-hour per-run timeout (`run_timeout_s`; no real run came near it, the longest took under 4 minutes).
+- **The 2-hour per-run timeout** (`run_timeout_s`): no real run came near it.
 - **The shared ledger under real, long runs.** Two runners in two directories on one ledger are tested with real processes against the mock (`tests/test_replay_shared_ledger.py`), as are a killed runner's reservation and a kill between intent and settle; two real runners side by side for hours, and the ledger on anything but a local disk, were not tried.
-- **Ollama's unparseable tool call against the real server** (issue 71). The answer was reproduced outside the runner on Ollama 0.40.16 (`/v1/chat/completions`, non-streaming); the runner's handling of it is tested only with the loopback mock sending the same status and body through LiteLLM's real `openai` provider. Whether Ollama's streaming endpoint, or another version, fails the same way is unknown.
-- **The quoted format error and `apply_patch` with a real model** (issue 75). The parsing of Ollama's message follows the bodies captured in issue 75; the whole path (rejected call, quoted message, corrected call, `apply_patch`, submission) is tested only against the mock. That `gpt-oss:20b` corrects itself after the quoted message rests on the small canned-loop sample in issue 75, not on a run. `apply_patch` was installed and used inside all 20 pilot images (a scratch file, a patch on standard input, a patch as an argument under the `testbed` Python, a hunk that does not match), not in an agent run.
-- **The proxy's privacy rule on real repositories.** Test fixtures in SWE-bench repositories may contain secret-shaped strings; a step that trips the detector is sent nowhere and the run ends `blocked_sensitive`. How often that happens is unknown.
+- **Ollama's streaming endpoint, or another Ollama version,** for the unparseable tool call: whether they fail the same way as 0.40.16 did is unknown.
+- **The paid models on `steproute-bash-2`.** All 280 paid runs used `steproute-bash-1`. Their stored transcripts hold no invalid-JSON call and no `apply_patch` call, so no difference is expected, but they were not run again.

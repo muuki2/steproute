@@ -107,7 +107,7 @@ Implement `steproute/core/schema.py` with stdlib dataclasses and explicit `to_di
 | `Decision` | `decision_id`, `ts`, `state`, `candidates: list[Action]`, `action`, `policy: str`, `propensity: float`, `predicted_success`, `predicted_cost` |
 | `Outcome` | `decision_id`, `ts`, `success: bool \| None`, `signals: dict`, `final_model`, `escalated: bool`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `latency_ms` |
 
-Effort vocabulary: `none`, `low`, `medium`, `high`, `max`. Providers without effort levels use `medium` only.
+Effort vocabulary: `none`, `low`, `medium`, `high`, `xhigh`, `max` (`xhigh` was added because Claude models expose it; `docs/SCHEMA.md`). Providers without effort levels use `medium` only.
 
 **Acceptance criteria**
 - Round-trip `from_dict(to_dict(x)) == x` for every type, including a three-level cascade.
