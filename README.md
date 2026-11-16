@@ -4,7 +4,7 @@ steproute is an open router that picks, for each step of an LLM agent run, which
 
 Python 3.11 or later, MIT licence. Version 0.0.1.
 
-## Current state (14 Nov 2026)
+## Current state (16 Nov 2026)
 
 **Works and is tested** (with mocks, loopback servers and synthetic data):
 
@@ -14,11 +14,15 @@ Python 3.11 or later, MIT licence. Version 0.0.1.
 - A 150-task SWE-bench Verified task set with a 20-task pilot, and a replay runner with spend caps.
 - An offline evaluator that compares a policy with every single model and effort configuration, and a LightGBM predictor.
 
+**Run on real providers:**
+
+- The pilot replay (14 to 16 Nov 2026): 20 tasks under 21 model and effort configurations, 420 runs, $12.85 of paid spend. `docs/results/pilot.md` has the cost and success of each configuration and the caveats. Five of the 21 results are dominated by a limit of the test setup, so read the caveats before using a number.
+
 **Not run yet:**
 
-- No paid provider has ever been called. The first pilot replay (20 tasks) has not run, so there is no dataset and there are no results.
+- The larger replay grid. No run beyond the pilot is approved, so there is no dataset release.
 - The LightGBM predictor has only been fitted on synthetic data. Its model card says so.
-- Whether routing beats the best single configuration is unknown.
+- Whether routing beats the best single configuration is unknown. The pilot is too small to say.
 
 **Planned, not built:** the graph model for new models, the external baselines, the dataset release, online updates.
 

@@ -1,6 +1,6 @@
 # SYNTHETIC DATA. NOT A RESULT.
 
-> **SYNTHETIC DATA. NOT A RESULT.** Every number in this card comes from the evaluator's synthetic generator (`steproute.eval.synthetic`), because no real outcome data exists yet (the paid replay of issue 18 has not run). They test the code. They say nothing about any real model, about whether routing pays, or about how LightGBM will do on real tasks. Issue 23's report on real data is a different document in a different place (`docs/results/`); this card and its outputs live under `docs/MODEL-CARD-TABULAR.md` and `docs/synthetic/tabular-predictor/` so the two cannot be confused.
+> **SYNTHETIC DATA. NOT A RESULT.** Every number in this card comes from the evaluator's synthetic generator (`steproute.eval.synthetic`), because the predictor has not been trained or evaluated on real outcome data. The 20-task pilot of issue 18 has run (`docs/results/pilot.md`), and nothing in this card uses it. The numbers here test the code. They say nothing about any real model, about whether routing pays, or about how LightGBM will do on real tasks. Issue 23's report on real data is a different document in a different place (`docs/results/`); this card and its outputs live under `docs/MODEL-CARD-TABULAR.md` and `docs/synthetic/tabular-predictor/` so the two cannot be confused.
 
 # Model card: the tabular predictor (LightGBM)
 

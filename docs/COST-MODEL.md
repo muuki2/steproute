@@ -28,7 +28,7 @@ Units: USD; prices per million tokens; latency in milliseconds.
 ## What is assumed and what is measured
 
 - **Prices, cache multipliers, the Haiku tier and the 512-token Anthropic cache minimum** come from provider docs (`docs/INTEGRATION-NOTES.md` section 7, checked 2026-11-13).
-- **`effort_output_mult` is 1.0 for every effort in the default catalog. That is a placeholder, not a measurement.** Until the pilot replay (issue 18) measures it, higher effort costs the same as lower effort in this model, apart from cache effects.
+- **`effort_output_mult` is 1.0 for every effort in the default catalog. That is a placeholder, not a measurement.** Until it is replaced, higher effort costs the same as lower effort in this model, apart from cache effects. The pilot replay (issue 18) measured output tokens per call by effort (`docs/results/pilot.md`); the catalog has not been updated from it.
 - **`est_output_tokens` is supplied by the caller.** The cost model does not predict output length. The worked examples use round numbers.
 - **`p_success` is supplied by the caller** (a predictor, issue 7). The cost model only combines the probabilities.
 - **Latency.** No profile in the default catalog carries a latency estimate, because nothing has been measured, so `latency_ms` is `None` for the default catalog. Example 6 uses illustrative numbers.
