@@ -312,6 +312,10 @@ class ProxyChatClient:
     notify: Callable[[str], None] | None = None
     #: Seconds paused for off-peak hours; not counted against the run timeout.
     paused_s: float = 0.0
+    #: The messages of the latest ``complete`` call, whether or not it was sent (a limit stops
+    #: the run before the call is made). ``None``: no call yet. The runner stores them as the
+    #: conversation of a run that ends without a result from the scaffold (issue 80).
+    last_messages: list[Mapping[str, Any]] | None = None
     list_spent: float = 0.0
     _last_prompt_tokens: int = 0
     _last_chars: int = 0
@@ -454,6 +458,7 @@ class ProxyChatClient:
     def complete(
         self, messages: Sequence[Mapping[str, Any]], tools: Sequence[Mapping[str, Any]]
     ) -> ChatReply:
+        self.last_messages = list(messages)
         chars = self._check_limits(messages)
         body: dict[str, Any] = {
             "model": self.spec.model,

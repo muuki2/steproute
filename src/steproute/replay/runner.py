@@ -1203,6 +1203,27 @@ class Runner:
             return LocalBackend()
         return SwebenchBackend(self._rows(), harness=self.config.harness)
 
+    def _store_without_result(
+        self, rdir: Path, messages: Sequence[Mapping[str, Any]] | None, ws: Workspace
+    ) -> None:
+        """``trajectory.json`` and ``workspace.diff`` of a run that ended without a result from
+        the scaffold: the client stopped it (``RunStopped``) or an error was raised under it.
+        ``messages`` is the conversation of the client's latest call (``None``: no call was
+        made, so there is no trajectory); the diff is the workspace as it is now. Redacted as
+        for a run the scaffold ended. Best effort: every error is ignored, each file on its
+        own, so nothing here changes how the run is recorded."""
+        if messages is not None:
+            try:
+                (rdir / "trajectory.json").write_text(
+                    self.redact(json.dumps(list(messages), indent=1)), "utf-8"
+                )
+            except Exception:
+                pass
+        try:
+            (rdir / "workspace.diff").write_text(self.redact(ws.diff()), "utf-8")
+        except Exception:
+            pass
+
     def _execute(self, spec: RunSpec, start: Attempt, budget: float | None) -> dict[str, Any]:
         assert self.ledger is not None
         run_id = start.run_id
@@ -1261,6 +1282,11 @@ class Runner:
                     result = scaffold.run(text, ws, client, nonce=secrets.token_hex(8))
                 except RunStopped as stopped:
                     status, reason = stopped.status, stopped.reason
+                    self._store_without_result(rdir, client.last_messages, ws)
+                except Exception:
+                    # A configuration mismatch or a runner error: ``_run_cell`` names it.
+                    self._store_without_result(rdir, client.last_messages, ws)
+                    raise
                 if result is not None:
                     (rdir / "trajectory.json").write_text(
                         self.redact(json.dumps(result.messages, indent=1)), "utf-8"
